@@ -149,6 +149,21 @@ def handler(env, entry, robotArm, chamber_1st, chamber_2nd, events):
                 events['handler'].succeed(value='handler')
 
 
+class MonitoredStore(simpy.Store):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.data = []
+
+    def put(self, *args, **kwargs):
+        self.data.append((self._env.now, 'put'))
+        return super().put(*args, **kwargs)
+
+    def get(self, *args, **kwargs):
+        self.data.append((self._env.now, 'get'))
+        return super().get(*args, **kwargs)
+
+
+
 TOT_WAFERS = 20
 env = simpy.Environment()
 wafers = list()
@@ -159,9 +174,12 @@ eventsname = ['produced', 'consumed', 'chamber1 finished', 'chamber1 requested',
 events = {event: env.event() for event in eventsname}
 entry = simpy.Store(env, capacity=1)
 RobotArm = GenericArm(capacity=2)
-Chamber_1st = simpy.Store(env, capacity=2)
-Chamber_2nd = simpy.Store(env, capacity=2)
+Chamber_1st = MonitoredStore(env, capacity=2)
+Chamber_2nd = MonitoredStore(env, capacity=2)
 
 prod = env.process(wafer_producer(env, entry, wafers, events))
 robotHandler = env.process(handler(env, entry, RobotArm, Chamber_1st, Chamber_2nd, events))
-env.run()
+env.run(until=524)
+
+print(Chamber_1st.data)
+print(Chamber_2nd.data)
