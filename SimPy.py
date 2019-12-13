@@ -221,7 +221,7 @@ print(RobotArm.monitoring_data)
 
 data_gantt_ch1 = convert_to_gantt_data(Chamber_1st.data, 'Chamber1', 'Wafer')
 data_gantt_ch2 = convert_to_gantt_data(Chamber_2nd.data, 'Chamber2', 'Wafer')
-data_gantt_robot = convert_to_gantt_data(RobotArm.monitoring_data, 'Robot')
+data_gantt_robot = convert_to_gantt_data(RobotArm.monitoring_data, 'Robot', 'Wafer')
 
 gen_colors = generate_colors('Wafer', 100)
 
