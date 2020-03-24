@@ -1,15 +1,14 @@
-import simpy
 import random
 import threading
-from datetime import datetime, date, time, timedelta
+from datetime import date, timedelta
 
 # for import plotly, Dash should be installed.
 #    pip install dash==1.7.0
 #    pip install numpy
 import plotly.figure_factory as ff
+import simpy
 
-
-FIRST_DATE = date(2010, 1, 1)
+FIRST_DATE = date(2020, 1, 1)
 
 
 class GenericArm:
@@ -41,7 +40,7 @@ class GenericArm:
             for item in self.items:
                 if self.items.__len__() == 0:
                     ret = False
-                if item.value['state'] == state:
+                if item.value['wafer_state'] == state:
                     buffer = item
                     try:
                         self.items.remove(item)
@@ -84,8 +83,8 @@ def handler(env, entry, robotArm, chamber_1st, chamber_2nd, events):
         if fromwho == 'chamber1 requested':  # deliver chamber 2 wafer to arm storage
             events['chamber1 requested'] = env.event()  # update triggered old event as new one.
             yield env.timeout(2)
-            wafer = robotArm.get('raw')
-            wafer.value['state'] = '1st'
+            wafer = robotArm.get
+            wafer.value['wafer_state'] = '1st'
             yield chamber_1st.put(wafer)
             print(env.now, 'from chamber1 requested 1st chamber processing on %s' % wafer.value)
             events['chamber1 finished'].succeed(value='chamber1 finished')
@@ -93,7 +92,7 @@ def handler(env, entry, robotArm, chamber_1st, chamber_2nd, events):
 
         elif fromwho == 'chamber1 finished':  # deliver chamber1 wafer to arm storage
             events['chamber1 finished'] = env.event()  # update triggered old event as new one.
-            wafer = yield chamber_1st.get()
+            wafer = yield chamber_1st.get
             print(env.now, 'from chamber1 finished on %s' % wafer.value)
             yield env.timeout(2)
             robotArm.put(wafer)
@@ -102,8 +101,8 @@ def handler(env, entry, robotArm, chamber_1st, chamber_2nd, events):
 
         elif fromwho == 'chamber2 requested':  # deliver chamber 2 wafer to arm storage
             events['chamber2 requested'] = env.event()  # update triggered old event as new one.
-            wafer = robotArm.get("1st")
-            wafer.value['state'] = 'complete'
+            wafer = robotArm.get
+            wafer.value['wafer_state'] = 'complete'
             yield env.timeout(2)
             yield chamber_2nd.put(wafer)
             print(env.now, 'from chamber2 requested', wafer.value)
@@ -113,7 +112,7 @@ def handler(env, entry, robotArm, chamber_1st, chamber_2nd, events):
         elif fromwho == 'chamber2 finished':  # deliver chamber1 wafer to arm storage
             # print(env.now, 'from chamber2 finished')
             events['chamber2 finished'] = env.event()  # update triggered old event as new one.
-            wafer = yield chamber_2nd.get()
+            wafer = yield chamber_2nd.get
             robotArm.put(wafer)
             print(env.now, 'from chamber2 finished', wafer.value)
             events['consumed'].succeed(value='consumed')
@@ -121,7 +120,7 @@ def handler(env, entry, robotArm, chamber_1st, chamber_2nd, events):
 
         elif fromwho == 'consumed':
             events['consumed'] = env.event()
-            wafer = robotArm.get('complete')
+            wafer = robotArm.get
             print(env.now, 'from consumer, consumed wafer is %s' % wafer.value)
             yield env.timeout(2)
             if not events['handler'].triggered:
@@ -136,17 +135,17 @@ def handler(env, entry, robotArm, chamber_1st, chamber_2nd, events):
 
             for item in robotArm.items:  # need to update wafer selecting algorithms
                 # information to be retrieved : wafer elapsed time, etc.
-                if item.value['state'] == 'complete':
+                if item.value['wafer_state'] == 'complete':
                     print(env.now, 'handler moving wafer to complete', item.value)
                     yield env.timeout(2)
                     events['consumed'].succeed(value='consumed')
 
-                elif item.value['state'] == '1st':
+                elif item.value['wafer_state'] == '1st':
                     yield env.timeout(2)
                     print(env.now, 'handler moving to 2nd chamber ', item.value)
                     events['chamber2 requested'].succeed(value='chamber2 requested')
 
-                elif item.value['state'] == 'raw':
+                elif item.value['wafer_state'] == 'raw':
                     yield env.timeout(2)
                     print(env.now, 'handler moving to 1st chamber ', item.value)
                     events['chamber1 requested'].succeed(value='chamber1 requested')
@@ -155,10 +154,10 @@ def handler(env, entry, robotArm, chamber_1st, chamber_2nd, events):
             # print(env.now, 'from producer')
             events['produced'] = env.event()  # update triggered old event as new one.
             if robotArm.count() == 0:
-                wafer = entry.get()
+                wafer = entry.get
                 yield env.timeout(2)
                 robotArm.put(wafer)
-                print (env.now, 'from producer get wafer from entry', wafer.value)
+                print(env.now, 'from producer get wafer from entry', wafer.value)
             else:
                 print(env.now, 'from producer do nothing, robot arm is full.')
 
@@ -198,11 +197,11 @@ def generate_colors(prefix, n):
     return ret
 
 
-TOT_WAFERS = 20
+TOT_WAFERS = 40
 env = simpy.Environment()
 wafers = list()
 for i in range(TOT_WAFERS):
-    wafers.append({'id': i, 'state': 'raw', 'time_ch1': random.randint(3, 10), 'time_ch2': random.randint(2, 6)})
+    wafers.append({'id': i, 'wafer_state': 'raw', 'time_ch1': random.randint(3, 20), 'time_ch2': random.randint(5, 40)})
 events_names = ['produced', 'consumed', 'chamber1 finished', 'chamber1 requested', 'chamber2 finished',
                 'chamber2 requested', 'handler']
 events = {event: env.event() for event in events_names}
@@ -229,4 +228,4 @@ fig = ff.create_gantt(data_gantt_ch1 + data_gantt_ch2 + data_gantt_robot, colors
 
 # following doesn't work in pycharm.
 # work in jupyter notebook
-# fig.show()
+fig.show()
