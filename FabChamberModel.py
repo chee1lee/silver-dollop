@@ -37,19 +37,11 @@ class chamber_profiler(object):
         self.entry_wafer = entry_cnt
         self.exit_wafer = exit_cnt
 
-    def update_arm_status(self, arm_1st, arm_2nd):
-        if arm_1st > 0:
-            self.robotarm[0] = 1
-            self.armtime[0] = arm_1st
-        else:
-            self.robotarm[0] = 0
-            self.armtime[0] = 0
-        if arm_2nd > 0:
-            self.robotarm[1] = 1
-            self.armtime[1] = arm_2nd
-        else:
-            self.robotarm[1] = 0
-            self.armtime[1] = 0
+    def update_arm_status(self, cnt1, time1, cnt2, time2):
+        self.robotarm[0] = cnt1
+        self.armtime[0] = time1
+        self.robotarm[1] = cnt2
+        self.armtime[1] = time2
 
     def get_state(self):
         # To Do: Design wafer_state generation logic in here.
@@ -133,7 +125,8 @@ def proc_handler(env, airlock_list, arm_list, chambers_list):
         for ch in chambers_list:
             profiler.update_chamber_status(ch.chamber_name, ch.store.items.__len__(), ch.get_time_remaining())
         profiler.update_entry_exit_status(airlock_list[0].get_count(), airlock_list[1].get_count())
-        profiler.update_arm_status(arm_list[0].get_time_remaining(), arm_list[1].get_time_remaining())
+        profiler.update_arm_status(arm_list[0].get_count(), arm_list[0].get_time_remaining(),
+                                   arm_list[1].get_count(), arm_list[1].get_time_remaining())
         profiler.print_info()
         if profiler.get_state() == 987654321:
             print("--------Termininate state!!!--------")
@@ -226,7 +219,7 @@ class chamber_model(object):
         self.store.put(wafer)
         self.wafer_start_time = env.now
         yield self.env.timeout(time)
-        print(env.now, 'Put ', self.chamber_name, wafer)
+        print(env.now, '\tPut ', self.chamber_name, wafer)
 
     def put(self, wafer):
         global fail_flag
@@ -283,7 +276,7 @@ class arm_model(object):
 
     def late(self, wafer, time):
         self.store.put(wafer)
-        print(self.env.now, 'Put ', self.arm_name, wafer)
+        print(self.env.now, '\tPut ', self.arm_name, wafer)
         yield self.env.timeout(time)
         self.wafer_start_time = env.now
 
@@ -319,6 +312,8 @@ class arm_model(object):
                 time_remain = wafer['time_ch1']
             elif wafer['wafer_state'] == 'ch1 done':
                 time_remain = wafer['time_ch2']
+            else:
+                time_remain = 1
         else:
             time_remain = 0
         return time_remain
