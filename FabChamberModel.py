@@ -1,4 +1,5 @@
 import random
+import socket
 from datetime import date
 
 import simpy
@@ -6,9 +7,7 @@ import simpy
 # for import plotly, Dash should be installed.
 #    pip install dash==1.7.0
 #    pip install numpy
-
 FIRST_DATE = date(2020, 1, 1)
-
 
 # manages chamber wafer_state and reward information.
 class chamber_profiler(object):
@@ -89,10 +88,9 @@ class chamber_profiler(object):
         print('Exit    {0:5d}'.format(self.exit_wafer))
         print('time:', env.now, '-----------------------------')
 
-
 # process make a decision of robot arm.
 def proc_handler(env, airlock_list, arm_list, chambers_list):
-    global event_entry, event_hdlr, fail_flag, success_flag
+    global event_entry, event_hdlr, fail_flag, success_flag, conn
     action_dict = {0: "Nop",
                    1: "airlock entry to 1st arm", 2: "airlock entry to 2nd arm",
                    3: "1st arm to airlock exit", 4: "2nd arm to airlock exit",
@@ -128,12 +126,23 @@ def proc_handler(env, airlock_list, arm_list, chambers_list):
         profiler.update_arm_status(arm_list[0].get_count(), arm_list[0].get_time_remaining(),
                                    arm_list[1].get_count(), arm_list[1].get_time_remaining())
         profiler.print_info()
+        state = profiler.get_state()
+        reward = profiler.get_reward()
+        done = fail_flag | success_flag
+        send_data = str(state) + ' ' + str(reward) + ' ' + str(done)
+        conn.send(send_data.encode())
+
         if profiler.get_state() == 987654321:
             print("--------Termininate state!!!--------")
             env.exit()
+
+        # select action from socket
+
+        byte_action = conn.recv(1024)
+        action_taken = int(byte_action)
         # Select Action
-        print(action_dict)
-        action_taken = int(input('Select actions(0~21)?'))
+        # print(action_dict)
+        # action_taken = int(input('Select actions(0~21)?'))
         if action_taken == 0:
             i = 0  # do nothing
         elif action_taken == 1:
@@ -184,7 +193,6 @@ def proc_handler(env, airlock_list, arm_list, chambers_list):
         else:
             print('Error undefined action taken.', action_taken)
 
-
 # move wafer function.
 def move_wafer_A_from_B(A, B):
     global event_hdlr
@@ -194,7 +202,6 @@ def move_wafer_A_from_B(A, B):
     if not event_hdlr.triggered:
         event_hdlr.succeed()
     return
-
 
 # Chamber_model class makes a time-out event to handler after it gets the wafer.
 # See the example : https://simpy.readthedocs.io/en/latest/examples/latency.html
@@ -368,7 +375,7 @@ def generate_wafers(tot_wafers, ch1_t_min, ch1_t_max, ch2_t_min, ch2_t_max):
     return wafer_list
 
 
-def reset():
+def start_sim():
     global env, event_entry, event_hdlr, fail_flag, success_flag
     env = simpy.Environment()
     # Allocate wafers to processing on the chamber system.
@@ -399,8 +406,7 @@ def reset():
     success_flag = False
     process_handler = env.process(proc_handler(env, airlock, robot_arm, chambers))
     process_airlock_entry = env.process(proc_entry(env, total_wafers, airlock[0], wafers))
-    # todo: return initial observation
-    return [0 for _ in range(14)]
+    return env.run()
 
 
 """
@@ -408,16 +414,31 @@ input: action
 do: change the status
 return: observation, reward, done(True/False)
 """
-def step(action):
-    # todo: implementation
-    # return observation, reward, done
-    return [0 for _ in range(14)], 1, False
-
 
 if __name__ == "__main__":
-    reset()
-    # Do simulation.
-    env.run(until=515)
+    # create an INET, STREAMing socket server
+    serversocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    # bind the socket to a public host, and a well-known port
+    serversocket.bind(('localhost', 8080))
+    # become a server socket
+    serversocket.listen(5)
+    print('starting server...')
+    conn, addr = serversocket.accept()
+    print('client connected from:', addr)
+    conn.send('type start'.encode())
+    recv_data = conn.recv(1024)
+    if recv_data.decode() == 'start':
+        while True:
+
+            ret = start_sim()
+            if ret == 0:
+                print("----------------------")
+                print("Simulation terminated.")
+                print('----------------------')
+                # break
+    else:
+        conn.send("Welcome! type \'start\' to begin")
+    serversocket.server_close()
 
 '''
 #print(Chamber_1st.data)
