@@ -368,41 +368,56 @@ def generate_wafers(tot_wafers, ch1_t_min, ch1_t_max, ch2_t_min, ch2_t_max):
     return wafer_list
 
 
-############
-# Main line.#
-############
-env = simpy.Environment()
-# Allocate wafers to processing on the chamber system.
-total_wafers = 20
-wafers = generate_wafers(total_wafers, 3, 15, 5, 30)
-name_chambers = ['ch1st_1', 'ch1st_2', 'ch2nd_1', 'ch2nd_2']
-time_chambers = ['time_ch1', 'time_ch2']
-wafer_state = ['raw', 'ch1 done', 'ch2 done']
-# Allocate robot arm and chamber, airlock resources.
-robot_arm = [arm_model(env, 2, '1st_arm'), arm_model(env, 2, '2nd_arm')]
-airlock = [arm_model(env, arm_time=2, arm_name='entry'),
-           arm_model(env, arm_time=2, arm_name='exit')]
-chambers = list()
-# chambers_name = {'ch1st_1': 'time_ch1', 'ch1st_2': 'time_ch1', 'ch2nd_1': 'time_ch2', 'ch2nd_2': 'time_ch2'}
-chambers.append(chamber_model(env, chamber_time=time_chambers[0],
-                              chamber_name=name_chambers[0], pre=wafer_state[0], post=wafer_state[1]))
-chambers.append(chamber_model(env, chamber_time=time_chambers[0],
-                              chamber_name=name_chambers[1], pre=wafer_state[0], post=wafer_state[1]))
-chambers.append(chamber_model(env, chamber_time=time_chambers[1],
-                              chamber_name=name_chambers[2], pre=wafer_state[1], post=wafer_state[2]))
-chambers.append(chamber_model(env, chamber_time=time_chambers[1],
-                              chamber_name=name_chambers[3], pre=wafer_state[1], post=wafer_state[2]))
+def reset():
+    global env, event_entry, event_hdlr, fail_flag, success_flag
+    env = simpy.Environment()
+    # Allocate wafers to processing on the chamber system.
+    total_wafers = 20
+    wafers = generate_wafers(total_wafers, 3, 15, 5, 30)
+    name_chambers = ['ch1st_1', 'ch1st_2', 'ch2nd_1', 'ch2nd_2']
+    time_chambers = ['time_ch1', 'time_ch2']
+    wafer_state = ['raw', 'ch1 done', 'ch2 done']
+    # Allocate robot arm and chamber, airlock resources.
+    robot_arm = [arm_model(env, 2, '1st_arm'), arm_model(env, 2, '2nd_arm')]
+    airlock = [arm_model(env, arm_time=2, arm_name='entry'),
+               arm_model(env, arm_time=2, arm_name='exit')]
+    chambers = list()
+    # chambers_name = {'ch1st_1': 'time_ch1', 'ch1st_2': 'time_ch1', 'ch2nd_1': 'time_ch2', 'ch2nd_2': 'time_ch2'}
+    chambers.append(chamber_model(env, chamber_time=time_chambers[0],
+                                  chamber_name=name_chambers[0], pre=wafer_state[0], post=wafer_state[1]))
+    chambers.append(chamber_model(env, chamber_time=time_chambers[0],
+                                  chamber_name=name_chambers[1], pre=wafer_state[0], post=wafer_state[1]))
+    chambers.append(chamber_model(env, chamber_time=time_chambers[1],
+                                  chamber_name=name_chambers[2], pre=wafer_state[1], post=wafer_state[2]))
+    chambers.append(chamber_model(env, chamber_time=time_chambers[1],
+                                  chamber_name=name_chambers[3], pre=wafer_state[1], post=wafer_state[2]))
+    # Generate processes.
+    event_entry = env.event()
+    event_exit = env.event()
+    event_hdlr = env.event()
+    fail_flag = False
+    success_flag = False
+    process_handler = env.process(proc_handler(env, airlock, robot_arm, chambers))
+    process_airlock_entry = env.process(proc_entry(env, total_wafers, airlock[0], wafers))
+    # todo: return initial observation
+    return [0 for _ in range(14)]
 
-# Generate processes.
-event_entry = env.event()
-event_exit = env.event()
-event_hdlr = env.event()
-fail_flag = False
-success_flag = False
-process_handler = env.process(proc_handler(env, airlock, robot_arm, chambers))
-process_airlock_entry = env.process(proc_entry(env, total_wafers, airlock[0], wafers))
-# Do simulation.
-env.run(until=515)
+
+"""
+input: action
+do: change the status
+return: observation, reward, done(True/False)
+"""
+def step(action):
+    # todo: implementation
+    # return observation, reward, done
+    return [0 for _ in range(14)], 1, False
+
+
+if __name__ == "__main__":
+    reset()
+    # Do simulation.
+    env.run(until=515)
 
 '''
 #print(Chamber_1st.data)
