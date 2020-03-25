@@ -90,7 +90,7 @@ class chamber_profiler(object):
 
 # process make a decision of robot arm.
 def proc_handler(env, airlock_list, arm_list, chambers_list):
-    global event_entry, event_hdlr, fail_flag, success_flag, conn
+    global event_entry, event_hdlr, fail_flag, success_flag, conn, recv_data
     action_dict = {0: "Nop",
                    1: "airlock entry to 1st arm", 2: "airlock entry to 2nd arm",
                    3: "1st arm to airlock exit", 4: "2nd arm to airlock exit",
@@ -128,17 +128,22 @@ def proc_handler(env, airlock_list, arm_list, chambers_list):
         profiler.print_info()
         state = profiler.get_state()
         reward = profiler.get_reward()
-        done = fail_flag | success_flag
+        done = False
+        if state == 987654321:
+            done = True
         send_data = str(state) + ' ' + str(reward) + ' ' + str(done)
         conn.send(send_data.encode())
 
         if profiler.get_state() == 987654321:
             print("--------Termininate state!!!--------")
-            env.exit()
+            # env.exit()
 
         # select action from socket
 
         byte_action = conn.recv(1024)
+        if byte_action.decode() == 'reset':
+            env.exit()
+        # print('aaaaaaaaa', str(byte_action))
         action_taken = int(byte_action)
         # Select Action
         # print(action_dict)
@@ -425,19 +430,16 @@ if __name__ == "__main__":
     print('starting server...')
     conn, addr = serversocket.accept()
     print('client connected from:', addr)
-    conn.send('type start'.encode())
+    conn.send('type reset'.encode())
     recv_data = conn.recv(1024)
-    if recv_data.decode() == 'start':
-        while True:
-
+    while True:
+        if recv_data.decode() == 'reset':
             ret = start_sim()
             if ret == 0:
                 print("----------------------")
                 print("Simulation terminated.")
                 print('----------------------')
-                # break
-    else:
-        conn.send("Welcome! type \'start\' to begin")
+
     serversocket.server_close()
 
 '''
