@@ -19,6 +19,7 @@ class chamber_profiler(object):
         # It indicates whether wafer in producer slot is existed or not.
         self.entry_wafer = 0
         self.exit_wafer = 0
+        self.prev_exit_wafer = 0
         self.robotarm = [0, 0]
         self.armtime = [0, 0]
         self.status_values = list()
@@ -77,17 +78,23 @@ class chamber_profiler(object):
         # Example.. refer to design docs.
         self.reward = 0
         for item in self.status_values:
-            if item['time_remaining'] == 0:
+            if item['cnt'] == 0:
                 if (item['name'] == 'ch2nd_1') | (item['name'] == 'ch2nd_2'):
-                    self.reward = self.reward - 2
+                    self.reward = self.reward - 3
                 else:
-                    self.reward = self.reward - 1
+                    self.reward = self.reward - 2
+            if item['cnt'] == 1 and item['time_remaining'] == 0:
+                self.reward = self.reward - 3
+
         for i in self.robotarm:
             if i == 0:
                 self.reward = self.reward - 1
 
         if self.entry_wafer == 0:
             self.reward = self.reward - 1
+        if self.prev_exit_wafer != self.exit_wafer:
+            self.reward = self.reward + 100
+            self.prev_exit_wafer = self.exit_wafer
 
         # To Do: Design Terminate reward -10000
         # and Finish wafer_state +10000
@@ -323,6 +330,9 @@ class arm_model(object):
         global fail_flag
         # To Do: wafer's process status should be updated at this moment.
         execution_time = self.arm_time
+        if self.arm_name == 'exit' and wafer['wafer_state'] != 'ch2 done':
+            print("arm put fail")
+            fail_flag = True
         if self.store.items.__len__() == 1:
             print("arm put fail")
             fail_flag = True
