@@ -1,9 +1,10 @@
-import FabChamberModel as fc
+#import FabChamberModel as fc
 import tensorflow.compat.v1 as tf
 tf.disable_v2_behavior()
 import random
 import numpy as np
 from argparse import ArgumentParser
+import socket
 
 
 MAX_SCORE_QUEUE_SIZE = 100  # number of episode scores to calculate average performance
@@ -11,7 +12,7 @@ MAX_SCORE_QUEUE_SIZE = 100  # number of episode scores to calculate average perf
 
 def get_options():
     parser = ArgumentParser()
-    parser.add_argument('--MAX_EPISODE', type=int, default=30000,
+    parser.add_argument('--MAX_EPISODE', type=int, default=300000,
                         help='max number of episodes iteration')
     parser.add_argument('--ACTION_DIM', type=int, default=22,
                         help='number of actions one can take')
@@ -29,7 +30,7 @@ def get_options():
                         help='steps interval to decay epsilon')
     parser.add_argument('--LR', type=float, default=1e-4,
                         help='learning rate')
-    parser.add_argument('--MAX_EXPERIENCE', type=int, default=2000,
+    parser.add_argument('--MAX_EXPERIENCE', type=int, default=20000,
                         help='size of experience replay memory')
     parser.add_argument('--BATCH_SIZE', type=int, default=256,
                         help='mini batch size'),
@@ -91,17 +92,43 @@ class QAgent:
     # Sample action with random rate eps
     def sample_action(self, Q, feed, eps, options):
         act_values = Q.eval(feed_dict=feed)
+
         if random.random() <= eps:
             # action_index = env.action_space.sample()
             action_index = random.randrange(options.ACTION_DIM)
+            # print('Random choose: ', action_index)
         else:
             action_index = np.argmax(act_values)
+            # print('Q-value: ', np.round(act_values, decimals=2))
         action = np.zeros(options.ACTION_DIM)
         action[action_index] = 1
         return action
 
 
-def train(fabChamberEnv, TARGET_REWARD):
+def string_to_nparray(given):
+    status = given.split('|')
+    return np.array([int(i) for i in status], np.float64)
+
+
+def env_reset():
+    client.send('reset'.encode())
+    received = client.recv(1024).decode()
+
+    parsed = received.split(' ')
+    observation = string_to_nparray(parsed[0])
+    return observation
+
+
+def env_step(action):
+    client.send(str(action).encode())
+    received = client.recv(1024).decode()
+
+    parsed = received.split(' ')
+    observation = string_to_nparray(parsed[0])
+    return observation, int(parsed[1]), parsed[2] == 'True'
+
+
+def train(TARGET_REWARD):
     # Define placeholders to catch inputs and add options
     options = get_options()
     agent = QAgent(options)
@@ -149,7 +176,7 @@ def train(fabChamberEnv, TARGET_REWARD):
     # The episode loop
     for i_episode in range(options.MAX_EPISODE):
 
-        observation = fabChamberEnv.reset()
+        observation = env_reset()
         done = False
         score = 0
         sum_loss_value = 0
@@ -164,7 +191,11 @@ def train(fabChamberEnv, TARGET_REWARD):
             obs_queue[exp_pointer] = observation
             action = agent.sample_action(Q1, {obs: np.reshape(observation, (1, -1))}, eps, options)
             act_queue[exp_pointer] = action
-            observation, reward, done = fabChamberEnv.step(np.argmax(action))
+
+            action_index = np.argmax(action)
+            observation, reward, done = env_step(action_index)
+
+            print('action: ', action_index, ', reward: ', reward)
 
             score += reward
             reward = score  # Reward will be the accumulative score
@@ -212,6 +243,18 @@ def train(fabChamberEnv, TARGET_REWARD):
 if __name__ == "__main__":
     # env = gym.make(GAME)
     # Monitor(env, './test/', force=True)
-    fc.reset()
-    train(fc, 1010)
-    # env.close()
+
+    Host = 'localhost'
+    Port = 8080
+
+    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    client.connect((Host, Port))
+
+    rcv = client.recv(1024)
+    print(rcv.decode())
+
+    target_reward = 1010
+    train(target_reward)
+
+    client.send('terminate'.encode())
+    client.close()

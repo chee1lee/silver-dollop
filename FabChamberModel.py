@@ -46,6 +46,7 @@ class chamber_profiler(object):
         # To Do: Design wafer_state generation logic in here.
         # refer to https://docs.google.com/document/d/19hd7xoSbEZaNUVrmMcvwLhZL25RYdhKh-MmL4x0mEMY
         # Example...
+        """
         offset_1d = 10  # 1 digit offest
         offset_2d = 100  # 2 digit offset
         self.state = self.entry_wafer * offset_1d + self.robotarm[0]
@@ -58,6 +59,18 @@ class chamber_profiler(object):
         if fail_flag:
             self.state = 987654321
         return self.state
+        """
+        self.state = ""
+        for item in self.status_values:
+            self.state += str(item['cnt'] )+ '|' + str(item['time_remaining']) + '|'
+
+        self.state += str(self.robotarm[0]) + '|' + str(self.armtime[0]) + '|'
+        self.state += str(self.robotarm[1]) + '|' + str(self.armtime[1]) + '|'
+        self.state += str(self.entry_wafer) + '|'
+        self.state += str(self.exit_wafer)
+
+        return self.state
+
 
     def get_reward(self):
         # To Do: Design reward generation logic in here.
@@ -129,12 +142,12 @@ def proc_handler(env, airlock_list, arm_list, chambers_list):
         state = profiler.get_state()
         reward = profiler.get_reward()
         done = False
-        if state == 987654321:
+        if fail_flag is True:
             done = True
         send_data = str(state) + ' ' + str(reward) + ' ' + str(done)
         conn.send(send_data.encode())
 
-        if profiler.get_state() == 987654321:
+        if fail_flag is True:
             print("--------Termininate state!!!--------")
             # env.exit()
 
@@ -198,8 +211,15 @@ def proc_handler(env, airlock_list, arm_list, chambers_list):
         else:
             print('Error undefined action taken.', action_taken)
 
+
 # move wafer function.
 def move_wafer_A_from_B(A, B):
+    global fail_flag
+    if A.store.items.__len__() == 0:
+        print("chamber get fail")
+        fail_flag = True
+        return
+
     global event_hdlr
     yield env.timeout(2)
     wafer = yield A.get()
@@ -432,14 +452,13 @@ if __name__ == "__main__":
     print('client connected from:', addr)
     conn.send('type reset'.encode())
     recv_data = conn.recv(1024)
-    while True:
+    while recv_data.decode() != 'terminate':
         if recv_data.decode() == 'reset':
             ret = start_sim()
             if ret == 0:
                 print("----------------------")
                 print("Simulation terminated.")
                 print('----------------------')
-
     serversocket.server_close()
 
 '''

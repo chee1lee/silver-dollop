@@ -165,7 +165,7 @@ def train(env):
             global_step += 1
             if global_step % options.EPS_ANNEAL_STEPS == 0 and eps > options.FINAL_EPS:
                 eps = eps * options.EPS_DECAY
-            # env.render()
+            env.render()
 
             obs_queue[exp_pointer] = observation
             action = agent.sample_action(Q1, {obs: np.reshape(observation, (1, -1))}, eps, options)
