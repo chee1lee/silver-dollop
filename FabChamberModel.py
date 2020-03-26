@@ -78,10 +78,17 @@ class chamber_profiler(object):
         self.reward = 0
         for item in self.status_values:
             if item['time_remaining'] == 0:
-                self.reward = self.reward - 1
+                if (item['name'] == 'ch2nd_1') | (item['name'] == 'ch2nd_2'):
+                    self.reward = self.reward - 2
+                else:
+                    self.reward = self.reward - 1
         for i in self.robotarm:
             if i == 0:
                 self.reward = self.reward - 1
+
+        if self.entry_wafer == 0:
+            self.reward = self.reward - 1
+
         # To Do: Design Terminate reward -10000
         # and Finish wafer_state +10000
         if fail_flag:

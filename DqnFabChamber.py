@@ -20,13 +20,13 @@ def get_options():
                         help='number of observations one can see')
     parser.add_argument('--GAMMA', type=float, default=0.9,
                         help='discount factor of Q learning')
-    parser.add_argument('--INIT_EPS', type=float, default=1.0,
+    parser.add_argument('--INIT_EPS', type=float, default=0.5,
                         help='initial probability for randomly sampling action')
-    parser.add_argument('--FINAL_EPS', type=float, default=1e-5,
+    parser.add_argument('--FINAL_EPS', type=float, default=1e-4,
                         help='finial probability for randomly sampling action')
-    parser.add_argument('--EPS_DECAY', type=float, default=0.95,
+    parser.add_argument('--EPS_DECAY', type=float, default=0.99,
                         help='epsilon decay rate')
-    parser.add_argument('--EPS_ANNEAL_STEPS', type=int, default=10,
+    parser.add_argument('--EPS_ANNEAL_STEPS', type=int, default=100,
                         help='steps interval to decay epsilon')
     parser.add_argument('--LR', type=float, default=1e-4,
                         help='learning rate')
