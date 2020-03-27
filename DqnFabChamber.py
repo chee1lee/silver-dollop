@@ -1,6 +1,7 @@
 #import FabChamberModel as fc
 import tensorflow.compat.v1 as tf
 tf.disable_v2_behavior()
+# import tensorflow as tf
 import random
 import numpy as np
 from argparse import ArgumentParser

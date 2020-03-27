@@ -104,8 +104,8 @@ class chamber_profiler(object):
             self.reward = +10000
         return self.reward
 
-    def print_info(self):
-        print('State: {0}, Reward: {1}'.format(self.get_state(), self.get_reward()))
+    def print_info(self, reward):
+        print('State: {0}, Reward: {1}'.format(self.get_state(), reward))
         print("Chamber Wafer Time_remaining")
         for item in self.status_values:
             print('{0} {1:5d} {2:14d}'.format(item['name'], item['cnt'], item['time_remaining']))
@@ -152,9 +152,9 @@ def proc_handler(env, airlock_list, arm_list, chambers_list):
         profiler.update_entry_exit_status(airlock_list[0].get_count(), airlock_list[1].get_count())
         profiler.update_arm_status(arm_list[0].get_count(), arm_list[0].get_time_remaining(),
                                    arm_list[1].get_count(), arm_list[1].get_time_remaining())
-        profiler.print_info()
-        state = profiler.get_state()
         reward = profiler.get_reward()
+        state = profiler.get_state()
+        profiler.print_info(reward)
         done = False
         if fail_flag is True:
             done = True
@@ -174,7 +174,7 @@ def proc_handler(env, airlock_list, arm_list, chambers_list):
         action_taken = int(byte_action)
         # Select Action
         # print(action_dict)
-        # action_taken = int(input('Select actions(0~21)?'))
+        action_taken = int(input('Select actions(0~21)?'))
         if action_taken == 0:
             i = 0  # do nothing
         elif action_taken == 1:
@@ -286,6 +286,9 @@ class chamber_model(object):
         global fail_flag
         if self.store.items.__len__() == 0:
             print("chamber get fail")
+            fail_flag = True
+        if self.env.now - self.wafer_start_time < self.execution_time:
+            print('chamber get fail. execution time violated.')
             fail_flag = True
 
         wafer = self.store.get()
