@@ -1,19 +1,20 @@
-#import FabChamberModel as fc
+# import FabChamberModel as fc
 import tensorflow.compat.v1 as tf
+
 tf.disable_v2_behavior()
 # import tensorflow as tf
 import random
 import numpy as np
 from argparse import ArgumentParser
 import socket
-
+import time
 
 MAX_SCORE_QUEUE_SIZE = 100  # number of episode scores to calculate average performance
 
 
 def get_options():
     parser = ArgumentParser()
-    parser.add_argument('--MAX_EPISODE', type=int, default=300000,
+    parser.add_argument('--MAX_EPISODE', type=int, default=400000,
                         help='max number of episodes iteration')
     parser.add_argument('--ACTION_DIM', type=int, default=22,
                         help='number of actions one can take')
@@ -23,7 +24,7 @@ def get_options():
                         help='discount factor of Q learning')
     parser.add_argument('--INIT_EPS', type=float, default=0.5,
                         help='initial probability for randomly sampling action')
-    parser.add_argument('--FINAL_EPS', type=float, default=1e-4,
+    parser.add_argument('--FINAL_EPS', type=float, default=1e-3,
                         help='finial probability for randomly sampling action')
     parser.add_argument('--EPS_DECAY', type=float, default=0.99,
                         help='epsilon decay rate')
@@ -31,7 +32,7 @@ def get_options():
                         help='steps interval to decay epsilon')
     parser.add_argument('--LR', type=float, default=1e-4,
                         help='learning rate')
-    parser.add_argument('--MAX_EXPERIENCE', type=int, default=20000,
+    parser.add_argument('--MAX_EXPERIENCE', type=int, default=30000,
                         help='size of experience replay memory')
     parser.add_argument('--BATCH_SIZE', type=int, default=256,
                         help='mini batch size'),
@@ -131,6 +132,7 @@ def env_step(action):
 
 def train(TARGET_REWARD):
     # Define placeholders to catch inputs and add options
+    global time_begin
     options = get_options()
     agent = QAgent(options)
     sess = tf.compat.v1.InteractiveSession()
@@ -225,8 +227,10 @@ def train(TARGET_REWARD):
                 # Use sum to calculate average loss of this episode
                 sum_loss_value += step_loss_value
 
-        print("====== Episode {} ended with score = {}, avg_loss = {} ======".format(i_episode + 1, score,
-                                                                               sum_loss_value / score))
+        print(
+            "{0:7.1f}====== Episode {1} ended with score = {2}, avg_loss = {3} ======".format(time.time() - time_begin,
+                                                                                              i_episode + 1, score,
+                                                                                              sum_loss_value / score))
         score_queue.append(score)
         if len(score_queue) > MAX_SCORE_QUEUE_SIZE:
             score_queue.pop(0)
@@ -255,6 +259,7 @@ if __name__ == "__main__":
     print(rcv.decode())
 
     target_reward = 1010
+    time_begin = time.time()
     train(target_reward)
 
     client.send('terminate'.encode())

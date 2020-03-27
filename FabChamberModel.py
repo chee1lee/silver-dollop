@@ -174,7 +174,7 @@ def proc_handler(env, airlock_list, arm_list, chambers_list):
         action_taken = int(byte_action)
         # Select Action
         # print(action_dict)
-        action_taken = int(input('Select actions(0~21)?'))
+        # action_taken = int(input('Select actions(0~21)?'))
         if action_taken == 0:
             i = 0  # do nothing
         elif action_taken == 1:
