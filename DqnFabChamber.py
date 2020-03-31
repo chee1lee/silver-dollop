@@ -14,33 +14,33 @@ MAX_SCORE_QUEUE_SIZE = 100  # number of episode scores to calculate average perf
 
 def get_options():
     parser = ArgumentParser()
-    parser.add_argument('--MAX_EPISODE', type=int, default=400000,
+    parser.add_argument('--MAX_EPISODE', type=int, default=800000,
                         help='max number of episodes iteration')
     parser.add_argument('--ACTION_DIM', type=int, default=22,
                         help='number of actions one can take')
-    parser.add_argument('--OBSERVATION_DIM', type=int, default=14,
+    parser.add_argument('--OBSERVATION_DIM', type=int, default=13,
                         help='number of observations one can see')
     parser.add_argument('--GAMMA', type=float, default=0.9,
                         help='discount factor of Q learning')
-    parser.add_argument('--INIT_EPS', type=float, default=0.5,
+    parser.add_argument('--INIT_EPS', type=float, default=0.6,
                         help='initial probability for randomly sampling action')
-    parser.add_argument('--FINAL_EPS', type=float, default=1e-3,
+    parser.add_argument('--FINAL_EPS', type=float, default=5e-3,
                         help='finial probability for randomly sampling action')
-    parser.add_argument('--EPS_DECAY', type=float, default=0.99,
+    parser.add_argument('--EPS_DECAY', type=float, default=0.9,
                         help='epsilon decay rate')
-    parser.add_argument('--EPS_ANNEAL_STEPS', type=int, default=100,
+    parser.add_argument('--EPS_ANNEAL_STEPS', type=int, default=500,
                         help='steps interval to decay epsilon')
-    parser.add_argument('--LR', type=float, default=1e-4,
+    parser.add_argument('--LR', type=float, default=1e-3,
                         help='learning rate')
     parser.add_argument('--MAX_EXPERIENCE', type=int, default=30000,
                         help='size of experience replay memory')
-    parser.add_argument('--BATCH_SIZE', type=int, default=256,
+    parser.add_argument('--BATCH_SIZE', type=int, default=1024,
                         help='mini batch size'),
-    parser.add_argument('--H1_SIZE', type=int, default=128,
+    parser.add_argument('--H1_SIZE', type=int, default=64,
                         help='size of hidden layer 1')
-    parser.add_argument('--H2_SIZE', type=int, default=128,
+    parser.add_argument('--H2_SIZE', type=int, default=64,
                         help='size of hidden layer 2')
-    parser.add_argument('--H3_SIZE', type=int, default=128,
+    parser.add_argument('--H3_SIZE', type=int, default=64,
                         help='size of hidden layer 3')
     options = parser.parse_args()
     return options
@@ -149,7 +149,8 @@ def train(TARGET_REWARD):
     loss = tf.reduce_mean(tf.square(values1 - values2))
     train_step = tf.train.AdamOptimizer(options.LR).minimize(loss)
 
-    sess.run(tf.initialize_all_variables())
+    # sess.run(tf.initialize_all_variables())
+    sess.run(tf.global_variables_initializer())
 
     # saving and loading networks
     saver = tf.train.Saver()
@@ -175,18 +176,21 @@ def train(TARGET_REWARD):
 
     # Score cache
     score_queue = []
-
+    prt_target_cnt = 1
     # The episode loop
     for i_episode in range(options.MAX_EPISODE):
-
         observation = env_reset()
         done = False
         score = 0
         sum_loss_value = 0
-
+        action_record = list()
+        prt_on = False
+        prt_done_cnt = 0
         # The step loop
+        action_cnt = 0
         while not done:
             global_step += 1
+            action_cnt += 1
             if global_step % options.EPS_ANNEAL_STEPS == 0 and eps > options.FINAL_EPS:
                 eps = eps * options.EPS_DECAY
             # env.render()
@@ -198,8 +202,13 @@ def train(TARGET_REWARD):
             action_index = np.argmax(action)
             observation, reward, done = env_step(action_index)
 
-            print('action: ', action_index, ', reward: ', reward)
-
+            # print('action: ', action_index, ', reward: ', reward)
+            action_record.append((action_index, reward))
+            if reward >= 0:
+                prt_done_cnt += 1
+                if prt_done_cnt == prt_target_cnt:
+                    prt_on = True
+                    prt_target_cnt += 1
             score += reward
             reward = score  # Reward will be the accumulative score
 
@@ -227,10 +236,15 @@ def train(TARGET_REWARD):
                 # Use sum to calculate average loss of this episode
                 sum_loss_value += step_loss_value
 
-        print(
-            "{0:7.1f}====== Episode {1} ended with score = {2}, avg_loss = {3} ======".format(time.time() - time_begin,
-                                                                                              i_episode + 1, score,
-                                                                                              sum_loss_value / score))
+        if prt_on or ((i_episode + 1) % 1000 == 0):
+            print(action_record)
+            print('{0:7.1f} == Episode {1} ended with score = {2}, avg_loss = {3:4.2f} =='.format(
+                time.time() - time_begin,
+                i_episode + 1, score,
+                sum_loss_value / score))
+            prt_on = False
+        action_record.clear()
+
         score_queue.append(score)
         if len(score_queue) > MAX_SCORE_QUEUE_SIZE:
             score_queue.pop(0)
@@ -239,7 +253,7 @@ def train(TARGET_REWARD):
             else:
                 learning_finished = False
         if learning_finished:
-            print("Testing !!!")
+            print("learning Finishged. Let starts Testing !!!")
         # save progress every 100 episodes
         if learning_finished and i_episode % 100 == 0:
             saver.save(sess, 'checkpoints-DQN_FabChamberModel', global_step=global_step)

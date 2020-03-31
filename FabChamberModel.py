@@ -1,3 +1,4 @@
+import logging
 import random
 import socket
 from datetime import date
@@ -8,11 +9,12 @@ import simpy
 #    pip install dash==1.7.0
 #    pip install numpy
 FIRST_DATE = date(2020, 1, 1)
+logging.basicConfig(format='%(asctime)s %(message)s', level=logging.WARNING)
 
 # manages chamber wafer_state and reward information.
 class chamber_profiler(object):
     def __init__(self, chambers_name):
-        global fail_flag, success_flag
+        global fail_flag, success_flag, total_wafers
         self.reward = 0
         self.state = 0
         self.ch_names = chambers_name
@@ -63,12 +65,12 @@ class chamber_profiler(object):
         """
         self.state = ""
         for item in self.status_values:
-            self.state += str(item['cnt'] )+ '|' + str(item['time_remaining']) + '|'
+            self.state += str(item['cnt']) + '|' + str(item['time_remaining']) + '|'
 
         self.state += str(self.robotarm[0]) + '|' + str(self.armtime[0]) + '|'
         self.state += str(self.robotarm[1]) + '|' + str(self.armtime[1]) + '|'
-        self.state += str(self.entry_wafer) + '|'
-        self.state += str(self.exit_wafer)
+        self.state += str(self.entry_wafer)  # + '|'
+        # self.state += str(self.exit_wafer)
 
         return self.state
 
@@ -76,6 +78,7 @@ class chamber_profiler(object):
     def get_reward(self):
         # To Do: Design reward generation logic in here.
         # Example.. refer to design docs.
+        global success_flag
         self.reward = 0
         for item in self.status_values:
             if item['cnt'] == 0:
@@ -93,8 +96,10 @@ class chamber_profiler(object):
         if self.entry_wafer == 0:
             self.reward = self.reward - 1
         if self.prev_exit_wafer != self.exit_wafer:
-            self.reward = self.reward + 100
+            self.reward = 0
             self.prev_exit_wafer = self.exit_wafer
+            if self.prev_exit_wafer == total_wafers:
+                success_flag = True
 
         # To Do: Design Terminate reward -10000
         # and Finish wafer_state +10000
@@ -154,21 +159,22 @@ def proc_handler(env, airlock_list, arm_list, chambers_list):
                                    arm_list[1].get_count(), arm_list[1].get_time_remaining())
         reward = profiler.get_reward()
         state = profiler.get_state()
-        profiler.print_info(reward)
+        #profiler.print_info(reward)
         done = False
         if fail_flag is True:
             done = True
         send_data = str(state) + ' ' + str(reward) + ' ' + str(done)
         conn.send(send_data.encode())
-
+        logging.debug("sent status: %s", send_data)
         if fail_flag is True:
-            print("--------Termininate state!!!--------")
+            logging.info("--------Termininate state!!!--------")
             # env.exit()
 
         # select action from socket
 
         byte_action = conn.recv(1024)
-        if byte_action.decode() == 'reset':
+        logging.debug('rcvd action: %s', byte_action.decode())
+        if byte_action.decode() == 'reset' or byte_action.decode() == 'terminate':
             env.exit()
         # print('aaaaaaaaa', str(byte_action))
         action_taken = int(byte_action)
@@ -219,7 +225,7 @@ def proc_handler(env, airlock_list, arm_list, chambers_list):
             env.process(move_wafer_A_from_B(arm_list[1], chambers_list[3]))
         elif action_taken == 21:
             if event_entry.triggered:
-                print("Error Event interaction.")
+                logging.info("Error Event interaction.")
                 event_entry = env.event()
             event_entry.succeed()
         else:
@@ -230,7 +236,7 @@ def proc_handler(env, airlock_list, arm_list, chambers_list):
 def move_wafer_A_from_B(A, B):
     global fail_flag
     if A.store.items.__len__() == 0:
-        print("chamber get fail")
+        logging.info("chamber get fail")
         fail_flag = True
         return
 
@@ -265,30 +271,29 @@ class chamber_model(object):
         self.store.put(wafer)
         self.wafer_start_time = env.now
         yield self.env.timeout(time)
-        print(env.now, '\tPut ', self.chamber_name, wafer)
+        logging.info(env.now, 'Put ', self.chamber_name, wafer)
 
     def put(self, wafer):
         global fail_flag
         if self.store.items.__len__() == 1:
-            print("chamber put fail")
+            logging.info("chamber put fail")
             fail_flag = True
 
         if wafer['wafer_state'] == self.pre_state:
             self.execution_time = wafer[self.chamber_type]
             self.env.process(self.proc_put(wafer, self.execution_time))
         else:
-            print('error wafer state doesnt match', wafer['wafer_state'], self.pre_state)  # go to terminate.
+            logging.info('error wafer state doesnt match', wafer['wafer_state'], self.pre_state)  # go to terminate.
             fail_flag = True
-            assert 1
 
     # get wafer from Monitored store.
     def get(self):
         global fail_flag
         if self.store.items.__len__() == 0:
-            print("chamber get fail")
+            logging.info("chamber get fail")
             fail_flag = True
         if self.env.now - self.wafer_start_time < self.execution_time:
-            print('chamber get fail. execution time violated.')
+            logging.info('chamber get fail. execution time violated.')
             fail_flag = True
 
         wafer = self.store.get()
@@ -325,7 +330,7 @@ class arm_model(object):
 
     def late(self, wafer, time):
         self.store.put(wafer)
-        print(self.env.now, '\tPut ', self.arm_name, wafer)
+        logging.info(self.env.now, 'Put ', self.arm_name, wafer)
         yield self.env.timeout(time)
         self.wafer_start_time = env.now
 
@@ -334,10 +339,10 @@ class arm_model(object):
         # To Do: wafer's process status should be updated at this moment.
         execution_time = self.arm_time
         if self.arm_name == 'exit' and wafer['wafer_state'] != 'ch2 done':
-            print("arm put fail")
+            logging.info("arm put fail")
             fail_flag = True
         if self.store.items.__len__() == 1:
-            print("arm put fail")
+            logging.info("arm put fail")
             fail_flag = True
         self.env.process(self.late(wafer, execution_time))
 
@@ -348,7 +353,7 @@ class arm_model(object):
     def get(self):
         global fail_flag
         if self.store.items.__len__() == 0:
-            print("arm get fail")
+            logging.info("arm get fail")
             fail_flag = True
 
         wafer = self.store.get()
@@ -400,7 +405,7 @@ def proc_entry(env, tot_wafers, airlock_entry, wafers):
         yield event_entry
         event_entry = env.event()
         if airlock_entry.get_count() == 1:
-            print("entry put fail")
+            logging.info("entry put fail")
             fail_flag = True
             break;
         airlock_entry.put(wafers[i])
@@ -421,7 +426,7 @@ def generate_wafers(tot_wafers, ch1_t_min, ch1_t_max, ch2_t_min, ch2_t_max):
 
 
 def start_sim():
-    global env, event_entry, event_hdlr, fail_flag, success_flag
+    global env, event_entry, event_hdlr, fail_flag, success_flag, total_wafers
     env = simpy.Environment()
     # Allocate wafers to processing on the chamber system.
     total_wafers = 20
@@ -471,7 +476,10 @@ if __name__ == "__main__":
     conn, addr = serversocket.accept()
     print('client connected from:', addr)
     conn.send('type reset'.encode())
+
+    logging.debug('sent: type reset')
     recv_data = conn.recv(1024)
+    logging.debug("rcvd: %s", recv_data.decode())
     while recv_data.decode() != 'terminate':
         if recv_data.decode() == 'reset':
             ret = start_sim()
@@ -482,9 +490,9 @@ if __name__ == "__main__":
     serversocket.server_close()
 
 '''
-#print(Chamber_1st.data)
-#print(Chamber_2nd.data)
-#print(arm_list.monitoring_data)
+logging.info(Chamber_1st.data)
+logging.info(Chamber_2nd.data)
+logging.info(arm_list.monitoring_data)
 
 #data_gantt_ch1 = convert_to_gantt_data(Chamber_1st.data, 'Chamber1', 'Wafer')
 #data_gantt_ch2 = convert_to_gantt_data(Chamber_2nd.data, 'Chamber2', 'Wafer')
