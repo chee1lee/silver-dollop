@@ -105,7 +105,7 @@ class chamber_profiler(object):
         if self.prev_exit_wafer != self.exit_wafer:
             self.reward = 0
             self.prev_exit_wafer = self.exit_wafer
-            if self.prev_exit_wafer == self.tot_wafer:
+            if self.prev_exit_wafer == self.total_wafer:
                 success_flag = True
 
         # To Do: Design Terminate reward -1000
