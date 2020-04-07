@@ -7,7 +7,7 @@ import simpy
 #    pip install dash==1.7.0
 #    pip install numpy
 # FIRST_DATE = date(2020, 1, 1)
-logging.basicConfig(format='%(asctime)s L[%(lineno)d] %(message)s ', level=logging.DEBUG)
+logging.basicConfig(format='%(asctime)s L[%(lineno)d] %(message)s ', level=logging.WARNING)
 
 
 # manages chamber wafer_state and reward information.
@@ -108,12 +108,12 @@ class chamber_profiler(object):
             if self.prev_exit_wafer == self.tot_wafer:
                 success_flag = True
 
-        # To Do: Design Terminate reward -10000
-        # and Finish wafer_state +10000
+        # To Do: Design Terminate reward -1000
+        # and Finish wafer_state +1000
         if fail_flag:
-            self.reward = -10000
+            self.reward = -1000
         if success_flag:
-            self.reward = +10000
+            self.reward = +1000
         return self.reward
 
     def print_info(self, reward, env):
@@ -256,7 +256,7 @@ class arm_model(object):
 
 
 class FabModel(object):
-    action_dict = {0: "Nop",
+    action_dict = {21: "Nop",
                    1: "airlock entry to 1st arm", 2: "airlock entry to 2nd arm",
                    3: "1st arm to airlock exit", 4: "2nd arm to airlock exit",
                    5: 'CH1_1 to 1st arm', 6: "CH1_1 to 2nd arm",
@@ -267,7 +267,7 @@ class FabModel(object):
                    15: '1st arm to CH1_2', 16: '2nd arm to CH1_2',
                    17: '1st arm to CH2_1', 18: '2nd arm to CH2_1',
                    19: '1st arm to CH2_2', 20: '2nd arm to CH2_2',
-                   21: 'allocate wafer to entry'}
+                   0: 'allocate wafer to entry'}
     name_chambers = ['ch1st_1', 'ch1st_2', 'ch2nd_1', 'ch2nd_2']
     time_chambers = ['time_ch1', 'time_ch2']
     wafer_state = ['raw', 'ch1 done', 'ch2 done']
@@ -358,7 +358,7 @@ class FabModel(object):
         self.reward = self.profiler.get_reward(self.fail_flag,
                                                self.success_flag)
         self.state = self.profiler.get_state()
-        self.profiler.print_info(self.reward, self.env)
+        # self.profiler.print_info(self.reward, self.env)
         if self.fail_flag is True:
             self.done = True
             logging.info("--------Terminate state!!!--------")
@@ -379,9 +379,7 @@ class FabModel(object):
             # Update chamber, entry, arm status.
 
             timeout_no_op = 1  # Elasped time at no operation.
-            # rcv_value = yield (self.env.timeout(timeout_value) | self.event_hdlr)
-            # rcv_value = None
-            rcv_value = yield (self.event_hdlr | self.event_chm)
+            yield (self.event_hdlr | self.event_chm)
             if self.event_hdlr.triggered:
                 logging.debug('at %s hdlr event detected', self.env.now)
                 self.event_hdlr = self.env.event()
@@ -393,7 +391,7 @@ class FabModel(object):
             logging.debug('at %s Action Taken:[%s] %s', self.env.now, self.action, FabModel.action_dict[self.action])
             action_taken = int(self.action)
             # Select Action
-            if action_taken == 0:
+            if action_taken == 21:
                 yield self.env.timeout(timeout_no_op)
                 if not self.event_hdlr.triggered:
                     logging.debug('at %s, hdlr trigger on proc_hdlr', self.env.now)
@@ -441,7 +439,7 @@ class FabModel(object):
                 self.env.process(self.move_wafer_A_from_B(arm_list[0], chambers_list[3]))
             elif action_taken == 20:
                 self.env.process(self.move_wafer_A_from_B(arm_list[1], chambers_list[3]))
-            elif action_taken == 21:
+            elif action_taken == 0:
                 if self.event_entry.triggered:
                     self.event_entry = self.env.event()
                 yield self.env.timeout(timeout_no_op)
@@ -517,7 +515,7 @@ return: observation, reward, done(True/False)
 # For debugging.
 if __name__ == "__main__":
     model = FabModel(20)
-    alist = [17, 17]
+    alist = [0, 0, 0, 0,]
     # alist = [21, 1, 13, 0, 0, 5, 0, 0, 15, 0, 0, 9, 0, 0, 3, 0]
     for i in alist:
         result = model.step(action=i)

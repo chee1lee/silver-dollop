@@ -9,7 +9,6 @@ from tf_agents.agents.dqn import dqn_agent
 from tf_agents.environments import tf_py_environment
 from tf_agents.environments import utils
 from tf_agents.networks import q_network
-from tf_agents.policies import random_tf_policy
 from tf_agents.replay_buffers import tf_uniform_replay_buffer
 from tf_agents.trajectories import trajectory
 from tf_agents.utils import common
@@ -41,10 +40,10 @@ print(train_tf_env.action_spec())
 #################
 
 # Hyperparameters
-num_iterations = 20000  # @param {type:"integer"}
-initial_collect_steps = 1000  # @param {type:"integer"}
+num_iterations = 100000  # @param {type:"integer"}
+initial_collect_steps = 100  # @param {type:"integer"}
 collect_steps_per_iteration = 1  # @param {type:"integer"}
-replay_buffer_max_length = 100000  # @param {type:"integer"}
+replay_buffer_max_length = 1000  # @param {type:"integer"}
 batch_size = 64  # @param {type:"integer"}
 learning_rate = 1e-3  # @param {type:"number"}
 log_interval = 200  # @param {type:"integer"}
@@ -67,26 +66,40 @@ q_net = q_network.QNetwork(train_tf_env.observation_spec(),
                            )
 optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=learning_rate)
 train_step_counter = tf.Variable(0)
+
 agent = dqn_agent.DqnAgent(train_tf_env.time_step_spec(),
                            train_tf_env.action_spec(),
                            q_network=q_net,
+                           epsilon_greedy=0.9,
+                           observation_and_action_constraint_splitter=None,
+                           # boltzmann_temperature= 0.5,
+                           # emit_log_probability= True,
+                           gamma=0.9,
                            optimizer=optimizer,
+                           target_update_period=1000,
                            td_errors_loss_fn=common.element_wise_squared_loss,
-                           train_step_counter=train_step_counter)
+                           train_step_counter=train_step_counter,
+                           summarize_grads_and_vars=True,
+                           debug_summaries=True)
 agent.initialize()
 ##############
 # Policy setup#
 ##############
 # Todo: Design random policy
+'''
 eval_policy = agent.policy
 collect_policy = agent.collect_policy
 random_policy = random_tf_policy.RandomTFPolicy(train_tf_env.time_step_spec(),
                                                 train_tf_env.action_spec())
+
+policy = epsilon_greedy_policy.EpsilonGreedyPolicy(policy=random_policy,
+                                                   epsilon= 0.3,
+                                                   name='epsilon_greedy')
 FabModel_2 = EnvChamberModel(wafer=10, discount=0.99)
 exam_tf_env = tf_py_environment.TFPyEnvironment(FabModel_2)
 time_step = exam_tf_env.reset()
-random_policy.action(time_step)
-
+policy.action(time_step)
+'''
 
 ##########################
 # Metrics and evaluation #
@@ -122,15 +135,12 @@ driver = dynamic_episode_driver.DynamicEpisodeDriver(
     observers=observers,
     num_episodes=num_eval_episodes)
 final_time_step, policy_state = driver.run()
+
 '''
 replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
     data_spec=agent.collect_data_spec,
     batch_size=train_tf_env.batch_size,
     max_length=replay_buffer_max_length)
-
-
-# agent.collect_data_spec
-# agent.collect_data_spec._fields
 
 ###################
 # Data Collection #
@@ -140,7 +150,6 @@ def collect_step(environment, policy, buffer):
     action_step = policy.action(time_step)
     next_time_step = environment.step(action_step.action)
     traj = trajectory.from_transition(time_step, action_step, next_time_step)
-
     # Add trajectory to the replay buffer
     buffer.add_batch(traj)
 
@@ -150,7 +159,7 @@ def collect_data(env, policy, buffer, steps):
         collect_step(env, policy, buffer)
 
 
-collect_data(train_tf_env, random_policy, replay_buffer, steps=100)
+collect_data(train_tf_env, agent.policy, replay_buffer, steps=100)
 
 # This loop is so common in RL, that we provide standard implementations.
 # For more details see the drivers module.
@@ -181,7 +190,7 @@ returns = [avg_return]
 for _ in range(num_iterations):
     # Collect a few steps using collect_policy and save to the replay buffer.
     for _ in range(collect_steps_per_iteration):
-        collect_step(eval_tf_env, agent.collect_policy, replay_buffer)
+        collect_step(train_tf_env, agent.collect_policy, replay_buffer)
 
     # Sample a batch of data from the buffer and update the agent's network.
     experience, unused_info = next(iterator)

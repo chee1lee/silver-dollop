@@ -6,11 +6,17 @@ tf.disable_v2_behavior()
 import random
 import numpy as np
 from argparse import ArgumentParser
-import socket
 import time
+
+# from evn_chamberModel import EnvChamberModel
+from FabChamberModel_standalone import FabModel
 
 MAX_SCORE_QUEUE_SIZE = 100  # number of episode scores to calculate average performance
 
+tf.disable_v2_behavior()
+
+
+# tf.compat.v1.enable_v2_behavior()
 
 def get_options():
     parser = ArgumentParser()
@@ -53,7 +59,6 @@ Remain unchanged when applied to different problems.
 
 
 class QAgent:
-
     # A naive neural network with 3 hidden layers and relu as non-linear function.
     def __init__(self, options):
         self.W1 = self.weight_variable([options.OBSERVATION_DIM, options.H1_SIZE])
@@ -107,27 +112,15 @@ class QAgent:
         return action
 
 
-def string_to_nparray(given):
-    status = given.split('|')
-    return np.array([int(i) for i in status], np.float64)
-
-
 def env_reset():
-    client.send('reset'.encode())
-    received = client.recv(1024).decode()
-
-    parsed = received.split(' ')
-    observation = string_to_nparray(parsed[0])
+    model.reset()
+    observation, reward, done = model.get_observation()
     return observation
 
 
 def env_step(action):
-    client.send(str(action).encode())
-    received = client.recv(1024).decode()
-
-    parsed = received.split(' ')
-    observation = string_to_nparray(parsed[0])
-    return observation, int(parsed[1]), parsed[2] == 'True'
+    model.step(action)
+    return model.get_observation()
 
 
 def train(TARGET_REWARD):
@@ -260,21 +253,7 @@ def train(TARGET_REWARD):
 
 
 if __name__ == "__main__":
-    # env = gym.make(GAME)
-    # Monitor(env, './test/', force=True)
-
-    Host = 'localhost'
-    Port = 8080
-
-    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client.connect((Host, Port))
-
-    rcv = client.recv(1024)
-    print(rcv.decode())
-
+    model = FabModel(wafer_number=10)
     target_reward = 1010
     time_begin = time.time()
     train(target_reward)
-
-    client.send('terminate'.encode())
-    client.close()
