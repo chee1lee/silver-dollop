@@ -24,7 +24,7 @@ def get_options():
                         help='max number of episodes iteration')
     parser.add_argument('--ACTION_DIM', type=int, default=22,
                         help='number of actions one can take')
-    parser.add_argument('--OBSERVATION_DIM', type=int, default=13,
+    parser.add_argument('--OBSERVATION_DIM', type=int, default=14,
                         help='number of observations one can see')
     parser.add_argument('--GAMMA', type=float, default=0.9,
                         help='discount factor of Q learning')
@@ -97,8 +97,12 @@ class QAgent:
         return observation, Q
 
     # Sample action with random rate eps
-    def sample_action(self, Q, feed, eps, options):
+    def sample_action(self, Q, feed, eps, options, valid_action_mask):
         act_values = Q.eval(feed_dict=feed)
+
+        for i in range(options.ACTION_DIM):
+            if valid_action_mask[i] == 0:
+                act_values[i] = np.NINF
 
         if random.random() <= eps:
             # action_index = env.action_space.sample()
@@ -112,18 +116,7 @@ class QAgent:
         return action
 
 
-def env_reset():
-    model.reset()
-    observation, reward, done = model.get_observation()
-    return observation
-
-
-def env_step(action):
-    model.step(action)
-    return model.get_observation()
-
-
-def train(TARGET_REWARD):
+def train(env, TARGET_REWARD):
     # Define placeholders to catch inputs and add options
     global time_begin
     options = get_options()
@@ -172,7 +165,8 @@ def train(TARGET_REWARD):
     prt_target_cnt = 1
     # The episode loop
     for i_episode in range(options.MAX_EPISODE):
-        observation = env_reset()
+        env.reset()
+        observation, _, _ = env.get_observation()
         done = False
         score = 0
         sum_loss_value = 0
@@ -186,14 +180,17 @@ def train(TARGET_REWARD):
             action_cnt += 1
             if global_step % options.EPS_ANNEAL_STEPS == 0 and eps > options.FINAL_EPS:
                 eps = eps * options.EPS_DECAY
-            # env.render()
 
             obs_queue[exp_pointer] = observation
-            action = agent.sample_action(Q1, {obs: np.reshape(observation, (1, -1))}, eps, options)
+            valid_action_mask = env.get_valid_action_mask()
+
+            action = agent.sample_action(Q1, {obs: np.reshape(observation, (1, -1))}, eps, options, valid_action_mask)
+
             act_queue[exp_pointer] = action
 
             action_index = np.argmax(action)
-            observation, reward, done = env_step(action_index)
+            env.step(action_index)
+            observation, reward, done = model.get_observation()
 
             # print('action: ', action_index, ', reward: ', reward)
             action_record.append((action_index, reward))
@@ -217,11 +214,11 @@ def train(TARGET_REWARD):
                 exp_pointer = 0  # Refill the replay memory if it is full
 
             if global_step >= options.MAX_EXPERIENCE:
-                rand_indexs = np.random.choice(options.MAX_EXPERIENCE, options.BATCH_SIZE)
-                feed.update({obs: obs_queue[rand_indexs]})
-                feed.update({act: act_queue[rand_indexs]})
-                feed.update({rwd: rwd_queue[rand_indexs]})
-                feed.update({next_obs: next_obs_queue[rand_indexs]})
+                rand_indices = np.random.choice(options.MAX_EXPERIENCE, options.BATCH_SIZE)
+                feed.update({obs: obs_queue[rand_indices]})
+                feed.update({act: act_queue[rand_indices]})
+                feed.update({rwd: rwd_queue[rand_indices]})
+                feed.update({next_obs: next_obs_queue[rand_indices]})
                 if not learning_finished:  # If not solved, we train and get the step loss
                     step_loss_value, _ = sess.run([loss, train_step], feed_dict=feed)
                 else:  # If solved, we just get the step loss
@@ -256,4 +253,4 @@ if __name__ == "__main__":
     model = FabModel(wafer_number=10)
     target_reward = 1010
     time_begin = time.time()
-    train(target_reward)
+    train(model, target_reward)

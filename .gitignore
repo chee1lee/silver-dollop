@@ -1,5 +1,4 @@
-
 .idea/silver-dollop.iml
 .idea/misc.xml
 *.json
-*.json
+*.pyc

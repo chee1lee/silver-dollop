@@ -1,5 +1,6 @@
 import logging
 import random
+import numpy as np
 
 import simpy
 
@@ -8,7 +9,7 @@ import simpy
 #    pip install numpy
 # FIRST_DATE = date(2020, 1, 1)
 logging.basicConfig(format='%(asctime)s L[%(lineno)d] %(message)s ', level=logging.WARNING)
-
+#logging.basicConfig(format='%(asctime)s L[%(lineno)d] %(message)s ', level=logging.DEBUG)
 
 # manages chamber wafer_state and reward information.
 class chamber_profiler(object):
@@ -96,22 +97,25 @@ class chamber_profiler(object):
             if item['cnt'] == 1 and item['time_remaining'] == 0:
                 self.reward = self.reward - 3
 
+        '''
         for i in self.robotarm:
             if i == 0:
                 self.reward = self.reward - 1
+        '''
 
         if self.entry_wafer == 0:
             self.reward = self.reward - 1
+
         if self.prev_exit_wafer != self.exit_wafer:
-            self.reward = 0
+            self.reward = 10
             self.prev_exit_wafer = self.exit_wafer
-            if self.prev_exit_wafer == self.tot_wafer:
+            if self.prev_exit_wafer == self.total_wafer:
                 success_flag = True
 
         # To Do: Design Terminate reward -1000
         # and Finish wafer_state +1000
-        if fail_flag:
-            self.reward = -1000
+        # if fail_flag:
+            # self.reward = -1000
         if success_flag:
             self.reward = +1000
         return self.reward
@@ -272,6 +276,7 @@ class FabModel(object):
     time_chambers = ['time_ch1', 'time_ch2']
     wafer_state = ['raw', 'ch1 done', 'ch2 done']
     no_entry, no_exit, no_hdlr, no_step, no_chm = 1, 2, 3, 4, 5  # Event value assignment.
+    curr_nope_count = 0
 
     def __init__(self, wafer_number):
         self.env = simpy.Environment()
@@ -279,6 +284,7 @@ class FabModel(object):
         self.airlock = list()
         self.chambers = list()
         self.wafer_number = wafer_number
+        self.curr_nope_count
         self.initialize()
 
     def initialize(self):
@@ -320,6 +326,7 @@ class FabModel(object):
         self.process_handler = self.env.process(self.proc_handler(self.airlock, self.robot_arm, self.chambers))
         self.process_airlock_entry = self.env.process(self.proc_entry(self.wafer_number, self.airlock[0], wafers))
         self.profiler = self.init_chamber_profiler()
+        self.curr_nope_count = 0
         return
 
     def reset(self):
@@ -336,6 +343,7 @@ class FabModel(object):
         self.env.run(self.event_step)
         self.event_step = self.env.event()
         return obs
+
 
     def init_chamber_profiler(self):
         ch_names = list()
@@ -358,7 +366,11 @@ class FabModel(object):
         self.reward = self.profiler.get_reward(self.fail_flag,
                                                self.success_flag)
         self.state = self.profiler.get_state()
-        # self.profiler.print_info(self.reward, self.env)
+        self.state.append(self.curr_nope_count)
+
+        # for debug
+        self.profiler.print_info(self.reward, self.env)
+
         if self.fail_flag is True:
             self.done = True
             logging.info("--------Terminate state!!!--------")
@@ -367,6 +379,13 @@ class FabModel(object):
         else:
             self.done = False
         # logging.debug("at %s state: %r reward: %r Done:%r", self.env.now, self.state, self.reward, self.done)
+
+        if self.env.now > self.wafer_number * 10000:
+            self.done = True
+
+        if self.curr_nope_count > 30:
+            self.done = True
+
         return (self.state, self.reward, self.done)
 
     def proc_handler(self, airlock_list, arm_list, chambers_list):
@@ -392,6 +411,7 @@ class FabModel(object):
             action_taken = int(self.action)
             # Select Action
             if action_taken == 21:
+                self.curr_nope_count += 1
                 yield self.env.timeout(timeout_no_op)
                 if not self.event_hdlr.triggered:
                     logging.debug('at %s, hdlr trigger on proc_hdlr', self.env.now)
@@ -400,46 +420,67 @@ class FabModel(object):
                     self.event_step.succeed(value=self.no_step)
 
             elif action_taken == 1:
+                self.curr_nope_count = 0
                 self.env.process(self.move_wafer_A_from_B(airlock_list[0], arm_list[0]))
             elif action_taken == 2:
+                self.curr_nope_count = 0
                 self.env.process(self.move_wafer_A_from_B(airlock_list[0], arm_list[1]))
             elif action_taken == 3:
+                self.curr_nope_count = 0
                 self.env.process(self.move_wafer_A_from_B(arm_list[0], airlock_list[1]))
             elif action_taken == 4:
+                self.curr_nope_count = 0
                 self.env.process(self.move_wafer_A_from_B(arm_list[1], airlock_list[1]))
             elif action_taken == 5:
+                self.curr_nope_count = 0
                 self.env.process(self.move_wafer_A_from_B(chambers_list[0], arm_list[0]))
             elif action_taken == 6:
+                self.curr_nope_count = 0
                 self.env.process(self.move_wafer_A_from_B(chambers_list[0], arm_list[1]))
             elif action_taken == 7:
+                self.curr_nope_count = 0
                 self.env.process(self.move_wafer_A_from_B(chambers_list[1], arm_list[0]))
             elif action_taken == 8:
+                self.curr_nope_count = 0
                 self.env.process(self.move_wafer_A_from_B(chambers_list[1], arm_list[1]))
             elif action_taken == 9:
+                self.curr_nope_count = 0
                 self.env.process(self.move_wafer_A_from_B(chambers_list[2], arm_list[0]))
             elif action_taken == 10:
+                self.curr_nope_count = 0
                 self.env.process(self.move_wafer_A_from_B(chambers_list[2], arm_list[1]))
             elif action_taken == 11:
+                self.curr_nope_count = 0
                 self.env.process(self.move_wafer_A_from_B(chambers_list[3], arm_list[0]))
             elif action_taken == 12:
+                self.curr_nope_count = 0
                 self.env.process(self.move_wafer_A_from_B(chambers_list[3], arm_list[1]))
             elif action_taken == 13:
+                self.curr_nope_count = 0
                 self.env.process(self.move_wafer_A_from_B(arm_list[0], chambers_list[0]))
             elif action_taken == 14:
+                self.curr_nope_count = 0
                 self.env.process(self.move_wafer_A_from_B(arm_list[1], chambers_list[0]))
             elif action_taken == 15:
+                self.curr_nope_count = 0
                 self.env.process(self.move_wafer_A_from_B(arm_list[0], chambers_list[1]))
             elif action_taken == 16:
+                self.curr_nope_count = 0
                 self.env.process(self.move_wafer_A_from_B(arm_list[1], chambers_list[1]))
             elif action_taken == 17:
+                self.curr_nope_count = 0
                 self.env.process(self.move_wafer_A_from_B(arm_list[0], chambers_list[2]))
             elif action_taken == 18:
+                self.curr_nope_count = 0
                 self.env.process(self.move_wafer_A_from_B(arm_list[1], chambers_list[2]))
             elif action_taken == 19:
+                self.curr_nope_count = 0
                 self.env.process(self.move_wafer_A_from_B(arm_list[0], chambers_list[3]))
             elif action_taken == 20:
+                self.curr_nope_count = 0
                 self.env.process(self.move_wafer_A_from_B(arm_list[1], chambers_list[3]))
             elif action_taken == 0:
+                self.curr_nope_count = 0
                 if self.event_entry.triggered:
                     self.event_entry = self.env.event()
                 yield self.env.timeout(timeout_no_op)
@@ -448,6 +489,185 @@ class FabModel(object):
             else:
                 logging.debug('[ERR] undefined action taken: %d', action_taken)
         return
+
+
+    # check current state and return valid action set
+    # for example,
+    # return {0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}
+    # means 2, 3, and 21 actions are valid
+    # if the definition of actions in proc_handler are changed,
+    # this function has to be changed.
+    def get_valid_action_mask(self):
+        valid_action_mask = np.ones(22)  # --ACTION_DIM
+
+        # get errors
+        if self.airlock[0].store.items.__len__() == 0:
+            # self.env.process(self.move_wafer_A_from_B(airlock_list[0], arm_list[0]))
+            valid_action_mask[1] = 0
+            # self.env.process(self.move_wafer_A_from_B(airlock_list[0], arm_list[1]))
+            valid_action_mask[2] = 0
+
+        if self.robot_arm[0].store.items.__len__() == 0:
+            # self.env.process(self.move_wafer_A_from_B(arm_list[0], airlock_list[1]))
+            valid_action_mask[3] = 0
+            # self.env.process(self.move_wafer_A_from_B(arm_list[0], chambers_list[0]))
+            valid_action_mask[13] = 0
+            # self.env.process(self.move_wafer_A_from_B(arm_list[0], chambers_list[1]))
+            valid_action_mask[15] = 0
+            # self.env.process(self.move_wafer_A_from_B(arm_list[0], chambers_list[2]))
+            valid_action_mask[17] = 0
+            # self.env.process(self.move_wafer_A_from_B(arm_list[0], chambers_list[3]))
+            valid_action_mask[19] = 0
+
+        if self.robot_arm[1].store.items.__len__() == 0:
+            # self.env.process(self.move_wafer_A_from_B(arm_list[1], airlock_list[1]))
+            valid_action_mask[4] = 0
+            # self.env.process(self.move_wafer_A_from_B(arm_list[1], chambers_list[0]))
+            valid_action_mask[14] = 0
+            # self.env.process(self.move_wafer_A_from_B(arm_list[1], chambers_list[1]))
+            valid_action_mask[16] = 0
+            # self.env.process(self.move_wafer_A_from_B(arm_list[1], chambers_list[2]))
+            valid_action_mask[18] = 0
+            # self.env.process(self.move_wafer_A_from_B(arm_list[1], chambers_list[3]))
+            valid_action_mask[20] = 0
+
+        if (self.chambers[0].store.items.__len__() == 0) \
+                or (self.chambers[0].store.items.__len__() == 1
+                    and (self.chambers[0].env.now - self.chambers[0].wafer_start_time < self.chambers[0].execution_time)):
+            # self.env.process(self.move_wafer_A_from_B(chambers_list[0], arm_list[0]))
+            valid_action_mask[5] = 0
+            # self.env.process(self.move_wafer_A_from_B(chambers_list[0], arm_list[1]))
+            valid_action_mask[6] = 0
+
+        if (self.chambers[1].store.items.__len__() == 0) \
+                or (self.chambers[1].store.items.__len__() == 1
+                    and (self.chambers[1].env.now - self.chambers[1].wafer_start_time < self.chambers[1].execution_time)):
+            # self.env.process(self.move_wafer_A_from_B(chambers_list[1], arm_list[0]))
+            valid_action_mask[7] = 0
+            # self.env.process(self.move_wafer_A_from_B(chambers_list[1], arm_list[1]))
+            valid_action_mask[8] = 0
+
+        if (self.chambers[2].store.items.__len__() == 0) \
+                or (self.chambers[2].store.items.__len__() == 1
+                    and (self.chambers[2].env.now - self.chambers[2].wafer_start_time < self.chambers[0].execution_time)):
+            # self.env.process(self.move_wafer_A_from_B(chambers_list[2], arm_list[0]))
+            valid_action_mask[9] = 0
+            # self.env.process(self.move_wafer_A_from_B(chambers_list[2], arm_list[1]))
+            valid_action_mask[10] = 0
+
+        if (self.chambers[3].store.items.__len__() == 0) \
+                or (self.chambers[3].store.items.__len__() == 1
+                    and (self.chambers[3].env.now - self.chambers[3].wafer_start_time < self.chambers[3].execution_time)):
+            # self.env.process(self.move_wafer_A_from_B(chambers_list[3], arm_list[0]))
+            valid_action_mask[11] = 0
+            # self.env.process(self.move_wafer_A_from_B(chambers_list[3], arm_list[1]))
+            valid_action_mask[12] = 0
+
+        # put errors
+        if self.airlock[0].store.items.__len__() != 0:
+            valid_action_mask[0] = 0
+
+        if self.robot_arm[0].store.items.__len__() != 0:
+            # self.env.process(self.move_wafer_A_from_B(airlock_list[0], arm_list[0]))
+            valid_action_mask[1] = 0
+            # self.env.process(self.move_wafer_A_from_B(chambers_list[0], arm_list[0]))
+            valid_action_mask[5] = 0
+            # self.env.process(self.move_wafer_A_from_B(chambers_list[1], arm_list[0]))
+            valid_action_mask[7] = 0
+            # self.env.process(self.move_wafer_A_from_B(chambers_list[2], arm_list[0]))
+            valid_action_mask[9] = 0
+            # self.env.process(self.move_wafer_A_from_B(chambers_list[3], arm_list[0]))
+            valid_action_mask[11] = 0
+
+        if self.robot_arm[1].store.items.__len__() != 0:
+            # self.env.process(self.move_wafer_A_from_B(airlock_list[0], arm_list[1]))
+            valid_action_mask[2] = 0
+            # self.env.process(self.move_wafer_A_from_B(chambers_list[0], arm_list[1]))
+            valid_action_mask[6] = 0
+            # self.env.process(self.move_wafer_A_from_B(chambers_list[1], arm_list[1]))
+            valid_action_mask[8] = 0
+            # self.env.process(self.move_wafer_A_from_B(chambers_list[2], arm_list[1]))
+            valid_action_mask[10] = 0
+            # self.env.process(self.move_wafer_A_from_B(chambers_list[3], arm_list[1]))
+            valid_action_mask[12] = 0
+
+        if self.chambers[0].store.items.__len__() != 0:
+            # self.env.process(self.move_wafer_A_from_B(arm_list[0], chambers_list[0]))
+            valid_action_mask[13] = 0
+            # self.env.process(self.move_wafer_A_from_B(arm_list[1], chambers_list[0]))
+            valid_action_mask[14] = 0
+
+        if self.chambers[1].store.items.__len__() != 0:
+            # self.env.process(self.move_wafer_A_from_B(arm_list[0], chambers_list[1]))
+            valid_action_mask[15] = 0
+            # self.env.process(self.move_wafer_A_from_B(arm_list[1], chambers_list[1]))
+            valid_action_mask[16] = 0
+
+        if self.chambers[2].store.items.__len__() != 0:
+            # self.env.process(self.move_wafer_A_from_B(arm_list[0], chambers_list[2]))
+            valid_action_mask[17] = 0
+            # self.env.process(self.move_wafer_A_from_B(arm_list[1], chambers_list[2]))
+            valid_action_mask[18] = 0
+
+        if self.chambers[3].store.items.__len__() != 0:
+            # self.env.process(self.move_wafer_A_from_B(arm_list[0], chambers_list[3]))
+            valid_action_mask[19] = 0
+            # self.env.process(self.move_wafer_A_from_B(arm_list[1], chambers_list[3]))
+            valid_action_mask[20] = 0
+
+        #invalid put
+        if self.robot_arm[0].store.items.__len__() != 0:
+            if self.robot_arm[0].store.items[0]['wafer_state'] == 'raw':
+                # self.env.process(self.move_wafer_A_from_B(arm_list[0], airlock_list[1]))
+                valid_action_mask[3] = 0
+                # self.env.process(self.move_wafer_A_from_B(arm_list[0], chambers_list[2]))
+                valid_action_mask[17] = 0
+                # self.env.process(self.move_wafer_A_from_B(arm_list[0], chambers_list[3]))
+                valid_action_mask[19] = 0
+            if self.robot_arm[0].store.items[0]['wafer_state'] == 'ch1 done':
+                # self.env.process(self.move_wafer_A_from_B(arm_list[0], airlock_list[1]))
+                valid_action_mask[3] = 0
+                # self.env.process(self.move_wafer_A_from_B(arm_list[0], chambers_list[0]))
+                valid_action_mask[13] = 0
+                # self.env.process(self.move_wafer_A_from_B(arm_list[0], chambers_list[1]))
+                valid_action_mask[15] = 0
+            if self.robot_arm[0].store.items[0]['wafer_state'] == 'ch2 done':
+                # self.env.process(self.move_wafer_A_from_B(arm_list[0], chambers_list[0]))
+                valid_action_mask[13] = 0
+                # self.env.process(self.move_wafer_A_from_B(arm_list[0], chambers_list[1]))
+                valid_action_mask[15] = 0
+                # self.env.process(self.move_wafer_A_from_B(arm_list[0], chambers_list[2]))
+                valid_action_mask[17] = 0
+                # self.env.process(self.move_wafer_A_from_B(arm_list[0], chambers_list[3]))
+                valid_action_mask[19] = 0
+
+        if self.robot_arm[1].store.items.__len__() != 0:
+            if self.robot_arm[1].store.items[0]['wafer_state'] == 'raw':
+                # self.env.process(self.move_wafer_A_from_B(arm_list[1], airlock_list[1]))
+                valid_action_mask[4] = 0
+                # self.env.process(self.move_wafer_A_from_B(arm_list[1], chambers_list[2]))
+                valid_action_mask[18] = 0
+                # self.env.process(self.move_wafer_A_from_B(arm_list[1], chambers_list[3]))
+                valid_action_mask[20] = 0
+            if self.robot_arm[1].store.items[0]['wafer_state'] == 'ch1 done':
+                # self.env.process(self.move_wafer_A_from_B(arm_list[1], airlock_list[1]))
+                valid_action_mask[4] = 0
+                # self.env.process(self.move_wafer_A_from_B(arm_list[1], chambers_list[0]))
+                valid_action_mask[14] = 0
+                # self.env.process(self.move_wafer_A_from_B(arm_list[1], chambers_list[1]))
+                valid_action_mask[16] = 0
+            if self.robot_arm[1].store.items[0]['wafer_state'] == 'ch2 done':
+                # self.env.process(self.move_wafer_A_from_B(arm_list[1], chambers_list[0]))
+                valid_action_mask[14] = 0
+                # self.env.process(self.move_wafer_A_from_B(arm_list[1], chambers_list[1]))
+                valid_action_mask[16] = 0
+                # self.env.process(self.move_wafer_A_from_B(arm_list[1], chambers_list[2]))
+                valid_action_mask[18] = 0
+                # self.env.process(self.move_wafer_A_from_B(arm_list[1], chambers_list[3]))
+                valid_action_mask[20] = 0
+
+        return valid_action_mask
+
 
     # move wafer function.
     def move_wafer_A_from_B(self, A, B):
@@ -523,10 +743,23 @@ if __name__ == "__main__":
             model.reset()
             break
     print('1st epich finish')
-    alist = [21, 1, 21, 2, 0, 13, 16, 21, 0, 0, 0, 0, 0, 5, 8, 17, 20, 1, 21, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9, 12, 0, 3, 4,
-             0, 0]
+    alist = [0, 1, 0, 2, 21, 13, 16, 0, 21, 21, 21, 21, 21, 5, 8, 17, 221, 1, 0, 21, 21, 21, 21, 21, 21, 21, 21, 21, 9, 12, 21, 3, 4,
+             21, 21]
     for i in alist:
         result = model.step(action=i)
         if result[2]:
             model.reset()
             break
+
+    model.reset()
+
+    print('2st epich finish')
+    alist = [0 for _ in range(100)]
+    action_count = 0
+    for i in alist:
+        result = model.step(action=i)
+        action_count += 1
+        if result[2]:
+            model.reset()
+            break
+    print('action count=', action_count)
