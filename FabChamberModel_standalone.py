@@ -221,7 +221,7 @@ class arm_model(object):
         if self.arm_name == 'exit' and wafer['wafer_state'] != 'ch2 done':
             logging.debug("[ERR]arm tries to put the wrong wafer")
             self.fail = True
-        if self.store.items.__len__() == 1:
+        if self.store.items.__len__() == 1 and self.arm_name != 'exit':
             logging.debug("[ERR]Arm access full slot to put")
             self.fail = True
         if not self.fail:
