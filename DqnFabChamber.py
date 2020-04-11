@@ -105,9 +105,18 @@ class QAgent:
                 act_values[i] = np.NINF
 
         if random.random() <= eps:
-            # action_index = env.action_space.sample()
-            action_index = random.randrange(options.ACTION_DIM)
+            # action_index = random.randrange(options.ACTION_DIM)
             # print('Random choose: ', action_index)
+
+            nonzero_random_index = random.randrange(np.count_nonzero(valid_action_mask))
+            nonzero_position = 0
+            for i in range(options.ACTION_DIM):
+                if valid_action_mask[i] == 1:
+                    if nonzero_position == nonzero_random_index:
+                        action_index = i
+                        break
+                    else:
+                        nonzero_position += 1
         else:
             action_index = np.argmax(act_values)
             # print('Q-value: ', np.round(act_values, decimals=2))
@@ -231,7 +240,7 @@ def train(env, TARGET_REWARD):
             print('{0:7.1f} == Episode {1} ended with score = {2}, avg_loss = {3:4.2f} =='.format(
                 time.time() - time_begin,
                 i_episode + 1, score,
-                sum_loss_value / score))
+                sum_loss_value / action_cnt))
             prt_on = False
         action_record.clear()
 

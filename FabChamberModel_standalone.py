@@ -9,7 +9,7 @@ import simpy
 #    pip install numpy
 # FIRST_DATE = date(2020, 1, 1)
 logging.basicConfig(format='%(asctime)s L[%(lineno)d] %(message)s ', level=logging.WARNING)
-#logging.basicConfig(format='%(asctime)s L[%(lineno)d] %(message)s ', level=logging.DEBUG)
+# logging.basicConfig(format='%(asctime)s L[%(lineno)d] %(message)s ', level=logging.DEBUG)
 
 # manages chamber wafer_state and reward information.
 class chamber_profiler(object):
@@ -225,7 +225,7 @@ class arm_model(object):
         if self.arm_name == 'exit' and wafer['wafer_state'] != 'ch2 done':
             logging.debug("[ERR]arm tries to put the wrong wafer")
             self.fail = True
-        if self.store.items.__len__() == 1:
+        if self.store.items.__len__() == 1 and self.arm_name != 'exit':
             logging.debug("[ERR]Arm access full slot to put")
             self.fail = True
         if not self.fail:
@@ -291,6 +291,7 @@ class FabModel(object):
         self.env = simpy.Environment()
         # Allocate wafers to processing on the chamber system.
         wafers = self.generate_wafers(self.wafer_number, 3, 15, 5, 30)
+        # wafers = self.generate_wafers(self.wafer_number, 3, 3, 5, 5)
         # Allocate robot arm and chamber, airlock resources.
         self.robot_arm.clear()
         self.robot_arm.append(arm_model(self.env, 2, '1st_arm'))
@@ -342,6 +343,7 @@ class FabModel(object):
             return obs
         self.env.run(self.event_step)
         self.event_step = self.env.event()
+
         return obs
 
 
@@ -380,7 +382,7 @@ class FabModel(object):
             self.done = False
         # logging.debug("at %s state: %r reward: %r Done:%r", self.env.now, self.state, self.reward, self.done)
 
-        if self.env.now > self.wafer_number * 10000:
+        if self.env.now > self.wafer_number * 1000:
             self.done = True
 
         if self.curr_nope_count > 30:
@@ -735,18 +737,19 @@ return: observation, reward, done(True/False)
 # For debugging.
 if __name__ == "__main__":
     model = FabModel(20)
-    alist = [0, 0, 0, 0,]
-    # alist = [21, 1, 13, 0, 0, 5, 0, 0, 15, 0, 0, 9, 0, 0, 3, 0]
+    # alist = [0, 0, 0, 0,]
+    alist = [0, 1, 13, 0, 1, 0, 15, 1]
     for i in alist:
         result = model.step(action=i)
         if result[2]:
-            model.reset()
             break
+
     print('1st epich finish')
-    alist = [0, 1, 0, 2, 21, 13, 16, 0, 21, 21, 21, 21, 21, 5, 8, 17, 221, 1, 0, 21, 21, 21, 21, 21, 21, 21, 21, 21, 9, 12, 21, 3, 4,
-             21, 21]
-    for i in alist:
-        result = model.step(action=i)
+    model.reset()
+
+    while True:
+        action_index = int(input())
+        result = model.step(action=action_index)
         if result[2]:
             model.reset()
             break
