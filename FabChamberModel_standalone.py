@@ -418,6 +418,7 @@ class FabModel(object):
             if self.event_chm.triggered:
                 logging.debug('at %s chamber event detected', self.env.now)
                 self.event_chm = self.env.event()
+                continue
 
             logging.debug('------------------------- ')
             logging.debug('at %s Action Taken:[%s] %s', self.env.now, self.action, FabModel.action_dict[self.action])
