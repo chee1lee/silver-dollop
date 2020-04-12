@@ -260,6 +260,6 @@ def train(env, TARGET_REWARD):
 
 if __name__ == "__main__":
     model = FabModel(wafer_number=10)
-    target_reward = 1010
+    target_reward = 9000
     time_begin = time.time()
     train(model, target_reward)

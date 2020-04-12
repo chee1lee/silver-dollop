@@ -293,8 +293,8 @@ class FabModel(object):
     def initialize(self):
         self.env = simpy.Environment()
         # Allocate wafers to processing on the chamber system.
-        # wafers = self.generate_wafers(self.wafer_number, 3, 15, 5, 30)
-        wafers = self.generate_wafers(self.wafer_number, 3, 3, 5, 5)
+        wafers = self.generate_wafers(self.wafer_number, 3, 15, 5, 30)
+        # wafers = self.generate_wafers(self.wafer_number, 3, 3, 5, 5)
         # Allocate robot arm and chamber, airlock resources.
         self.robot_arm.clear()
         self.robot_arm.append(arm_model(self.env, 2, '1st_arm'))
