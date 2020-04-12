@@ -290,8 +290,8 @@ class FabModel(object):
     def initialize(self):
         self.env = simpy.Environment()
         # Allocate wafers to processing on the chamber system.
-        wafers = self.generate_wafers(self.wafer_number, 3, 15, 5, 30)
-        # wafers = self.generate_wafers(self.wafer_number, 3, 3, 5, 5)
+        # wafers = self.generate_wafers(self.wafer_number, 3, 15, 5, 30)
+        wafers = self.generate_wafers(self.wafer_number, 3, 3, 5, 5)
         # Allocate robot arm and chamber, airlock resources.
         self.robot_arm.clear()
         self.robot_arm.append(arm_model(self.env, 2, '1st_arm'))
@@ -375,7 +375,8 @@ class FabModel(object):
         if self.fail_flag is True:
             self.done = True
             logging.info("--------Terminate state!!!--------")
-            self.event_step.succeed(value=self.event_step)
+            if not self.event_step.triggered:
+                self.event_step.succeed(value=self.event_step)
             # after this statement, step() method should check done flag and terminate.
         else:
             self.done = False
@@ -406,7 +407,6 @@ class FabModel(object):
             if self.event_chm.triggered:
                 logging.debug('at %s chamber event detected', self.env.now)
                 self.event_chm = self.env.event()
-                continue
 
             logging.debug('------------------------- ')
             logging.debug('at %s Action Taken:[%s] %s', self.env.now, self.action, FabModel.action_dict[self.action])
@@ -485,9 +485,9 @@ class FabModel(object):
                 self.curr_nope_count = 0
                 if self.event_entry.triggered:
                     self.event_entry = self.env.event()
-                yield self.env.timeout(timeout_no_op)
                 self.event_entry.succeed(value=self.event_entry)
                 # Raise step event to FabModel.Step()
+                yield self.env.timeout(timeout_no_op)
             else:
                 logging.debug('[ERR] undefined action taken: %d', action_taken)
         return
@@ -673,7 +673,6 @@ class FabModel(object):
 
     # move wafer function.
     def move_wafer_A_from_B(self, A, B):
-        yield self.env.timeout(2)  # Deliver Time
         if A.store.items.__len__() == 0:
             logging.debug("[ERR] Get Fail. Target is empty.")
             self.fail_flag = True
@@ -684,6 +683,7 @@ class FabModel(object):
         #    logging.debug('at %s, hdlr trigger on move wafer', self.env.now)
         #    self.event_hdlr.succeed(value=self.no_hdlr)
         wafer = yield A.get()
+        yield self.env.timeout(1)  # Deliver Time
         self.fail_flag = A.fail
         if not self.fail_flag:
             B.put(wafer, self.event_chm)
@@ -707,7 +707,7 @@ class FabModel(object):
                 if not self.event_step.triggered:
                     self.event_step.succeed()
                 break
-            airlock_entry.put(wafers[i], self.event_chm)
+            airlock_entry.put(wafers[i], self.event_hdlr)
             self.fail_flag = airlock_entry.fail
             yield self.env.timeout(1)
 
@@ -738,7 +738,8 @@ return: observation, reward, done(True/False)
 if __name__ == "__main__":
     model = FabModel(20)
     # alist = [0, 0, 0, 0,]
-    alist = [0, 1, 13, 0, 1, 0, 15, 1]
+    # alist = [0, 1, 0, 2, 15, 14, 21, 0, 7, 6, 18, 2, 0, 14]
+    alist = [0, 2, 14, 21, 21, 0, 2, 21, 16, 6, 0, 21, 7, 20, 17, 2, 16]
     for i in alist:
         result = model.step(action=i)
         if result[2]:
