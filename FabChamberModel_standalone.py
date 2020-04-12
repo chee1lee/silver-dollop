@@ -9,6 +9,8 @@ import simpy
 #    pip install numpy
 # FIRST_DATE = date(2020, 1, 1)
 logging.basicConfig(format='%(asctime)s L[%(lineno)d] %(message)s ', level=logging.WARNING)
+
+
 # logging.basicConfig(format='%(asctime)s L[%(lineno)d] %(message)s ', level=logging.DEBUG)
 
 # manages chamber wafer_state and reward information.
@@ -284,7 +286,8 @@ class FabModel(object):
         self.airlock = list()
         self.chambers = list()
         self.wafer_number = wafer_number
-        self.curr_nope_count
+        self.wafer_in_proc = 0
+        self.curr_nope_count = 0
         self.initialize()
 
     def initialize(self):
@@ -319,6 +322,7 @@ class FabModel(object):
         self.event_hdlr = self.env.event()
         self.event_step = self.env.event()
         self.event_chm = self.env.event()
+        self.event_action = self.env.event()
         # Initialize variables on states and rewards.
         self.fail_flag, self.success_flag, self.done = False, False, False
         self.action, self.reward = 0, 0
@@ -328,6 +332,7 @@ class FabModel(object):
         self.process_airlock_entry = self.env.process(self.proc_entry(self.wafer_number, self.airlock[0], wafers))
         self.profiler = self.init_chamber_profiler()
         self.curr_nope_count = 0
+        self.wafer_in_proc = 0
         return
 
     def reset(self):
@@ -337,6 +342,7 @@ class FabModel(object):
     def step(self, action):
         # Do NOT manipulate statements sequence!
         self.action = action
+        self.event_action.succeed()
         self.env.run(self.event_step)
         self.event_step = self.env.event()
         obs = self.get_observation()
@@ -400,6 +406,11 @@ class FabModel(object):
             # Update chamber, entry, arm status.
 
             timeout_no_op = 1  # Elasped time at no operation.
+
+            yield (self.event_action)
+            if self.event_action.triggered:
+                logging.debug('at %s action event detected', self.env.now)
+                self.event_action = self.env.event()
             yield (self.event_hdlr | self.event_chm)
             if self.event_hdlr.triggered:
                 logging.debug('at %s hdlr event detected', self.env.now)
@@ -415,11 +426,11 @@ class FabModel(object):
             if action_taken == 21:
                 self.curr_nope_count += 1
                 yield self.env.timeout(timeout_no_op)
+                if not self.event_step.triggered:
+                    self.event_step.succeed(value=self.no_step)
                 if not self.event_hdlr.triggered:
                     logging.debug('at %s, hdlr trigger on proc_hdlr', self.env.now)
                     self.event_hdlr.succeed(value=self.no_hdlr)
-                if not self.event_step.triggered:
-                    self.event_step.succeed(value=self.no_step)
 
             elif action_taken == 1:
                 self.curr_nope_count = 0
@@ -484,13 +495,23 @@ class FabModel(object):
             elif action_taken == 0:
                 self.curr_nope_count = 0
                 yield self.env.timeout(timeout_no_op)
-                if self.event_entry.triggered:
-                    self.event_entry = self.env.event()
-                self.event_entry.succeed(value=self.event_entry)
-                # Raise step event to FabModel.Step()
+                self.wafer_in_proc += 1
+                if self.wafer_in_proc <= self.wafer_number:
+                    if self.event_entry.triggered:
+                        self.event_entry = self.env.event()
+                    self.event_entry.succeed(value=self.event_entry)
+                else:
+                    logging.debug("wafer is sold out!")
+                    self.fail_flag = True
+                    if not self.event_step.triggered:
+                        self.event_step.succeed(value=self.no_step)
+                    if not self.event_hdlr.triggered:
+                        # logging.debug('at %s, hdlr trigger on proc_hdlr', self.env.now)
+                        self.event_hdlr.succeed(value=self.no_hdlr)
 
             else:
                 logging.debug('[ERR] undefined action taken: %d', action_taken)
+
         return
 
 
@@ -674,28 +695,33 @@ class FabModel(object):
 
     # move wafer function.
     def move_wafer_A_from_B(self, A, B):
+        yield self.env.timeout(1)  # Deliver Time
         if A.store.items.__len__() == 0:
             logging.debug("[ERR] Get Fail. Target is empty.")
             self.fail_flag = True
-            yield self.env.timeout(1)  # Deliver Time
             if not self.event_step.triggered:
                 self.event_step.succeed(value=FabModel.no_step)
+
             return
         # if not self.event_hdlr.triggered:
         #    logging.debug('at %s, hdlr trigger on move wafer', self.env.now)
         #    self.event_hdlr.succeed(value=self.no_hdlr)
-        yield self.env.timeout(1)  # Deliver Time
+
         wafer = yield A.get()
         self.fail_flag = A.fail
         if not self.fail_flag:
             B.put(wafer, self.event_chm)
             self.fail_flag = B.fail
+            if not self.event_step.triggered:
+                self.event_step.succeed(value=FabModel.no_step)
+
             if not self.event_hdlr.triggered and not B.fail:
                 logging.debug('at %s, hdlr trigger on move wafer', self.env.now)
                 self.event_hdlr.succeed(value=FabModel.no_hdlr)
+        else:
+            if not self.event_step.triggered:
+                self.event_step.succeed(value=FabModel.no_step)
 
-        if not self.event_step.triggered:
-            self.event_step.succeed(value=FabModel.no_step)
         return
 
     # A process moves wafers to airlock entry, time-out event after a wafer placed on the airlock entry.
@@ -704,16 +730,15 @@ class FabModel(object):
             yield self.env.timeout(1)
             yield self.event_entry
             self.event_entry = self.env.event()
+
             if airlock_entry.get_count() == 1:
                 logging.debug("[ERR] Entry put fail. Airlock is already full.")
                 self.fail_flag = True
                 if not self.event_step.triggered:
                     self.event_step.succeed()
                 break
-
             airlock_entry.put(wafers[i], self.event_hdlr)
             self.fail_flag = airlock_entry.fail
-
             if not self.event_step.triggered:
                 self.event_step.succeed()
 
@@ -742,13 +767,15 @@ if __name__ == "__main__":
     model = FabModel(20)
     # alist = [0, 0, 0, 0,]
     # alist = [0, 1, 0, 2, 15, 14, 21, 0, 7, 6, 18, 2, 0, 14]
-    alist = [0, 2, 14, 21, 21, 0, 2, 21, 16, 6, 0, 21, 7, 20, 17, 2, 16]
+    # alist = [0, 2, 14, 21, 21, 0, 2, 21, 16, 6, 0, 21, 7, 20, 17, 2, 16]
+    alist = [0, 1, 13, 0, 21, 1]
     for i in alist:
         result = model.step(action=i)
         if result[2]:
             break
 
     print('1st epich finish')
+    exit()
     model.reset()
 
     while True:
