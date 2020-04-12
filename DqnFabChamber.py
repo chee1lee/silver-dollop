@@ -24,7 +24,7 @@ def get_options():
                         help='max number of episodes iteration')
     parser.add_argument('--ACTION_DIM', type=int, default=22,
                         help='number of actions one can take')
-    parser.add_argument('--OBSERVATION_DIM', type=int, default=14,
+    parser.add_argument('--OBSERVATION_DIM', type=int, default=13,
                         help='number of observations one can see')
     parser.add_argument('--GAMMA', type=float, default=0.9,
                         help='discount factor of Q learning')
@@ -97,26 +97,12 @@ class QAgent:
         return observation, Q
 
     # Sample action with random rate eps
-    def sample_action(self, Q, feed, eps, options, valid_action_mask):
+    def sample_action(self, Q, feed, eps, options):
         act_values = Q.eval(feed_dict=feed)
 
-        for i in range(options.ACTION_DIM):
-            if valid_action_mask[i] == 0:
-                act_values[i] = np.NINF
-
         if random.random() <= eps:
-            # action_index = random.randrange(options.ACTION_DIM)
+            action_index = random.randrange(options.ACTION_DIM)
             # print('Random choose: ', action_index)
-
-            nonzero_random_index = random.randrange(np.count_nonzero(valid_action_mask))
-            nonzero_position = 0
-            for i in range(options.ACTION_DIM):
-                if valid_action_mask[i] == 1:
-                    if nonzero_position == nonzero_random_index:
-                        action_index = i
-                        break
-                    else:
-                        nonzero_position += 1
         else:
             action_index = np.argmax(act_values)
             # print('Q-value: ', np.round(act_values, decimals=2))
@@ -191,9 +177,8 @@ def train(env, TARGET_REWARD):
                 eps = eps * options.EPS_DECAY
 
             obs_queue[exp_pointer] = observation
-            valid_action_mask = env.get_valid_action_mask()
 
-            action = agent.sample_action(Q1, {obs: np.reshape(observation, (1, -1))}, eps, options, valid_action_mask)
+            action = agent.sample_action(Q1, {obs: np.reshape(observation, (1, -1))}, eps, options)
 
             act_queue[exp_pointer] = action
 

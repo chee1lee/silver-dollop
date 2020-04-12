@@ -373,7 +373,7 @@ class FabModel(object):
         self.reward = self.profiler.get_reward(self.fail_flag,
                                                self.success_flag)
         self.state = self.profiler.get_state()
-        self.state.append(self.curr_nope_count)
+        # self.state.append(self.curr_nope_count)
 
         # for debug
         self.profiler.print_info(self.reward, self.env)
@@ -391,8 +391,8 @@ class FabModel(object):
         if self.env.now > self.wafer_number * 1000:
             self.done = True
 
-        if self.curr_nope_count > 30:
-            self.done = True
+        # if self.curr_nope_count > 30:
+        #    self.done = True
 
         return (self.state, self.reward, self.done)
 
@@ -418,7 +418,6 @@ class FabModel(object):
             if self.event_chm.triggered:
                 logging.debug('at %s chamber event detected', self.env.now)
                 self.event_chm = self.env.event()
-                continue
 
             logging.debug('------------------------- ')
             logging.debug('at %s Action Taken:[%s] %s', self.env.now, self.action, FabModel.action_dict[self.action])
