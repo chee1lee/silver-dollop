@@ -198,8 +198,8 @@ def train(env, TARGET_REWARD):
             act_queue[exp_pointer] = action
 
             action_index = np.argmax(action)
-            env.step(action_index)
-            observation, reward, done = model.get_observation()
+
+            observation, reward, done = env.step(action_index)
 
             # print('action: ', action_index, ', reward: ', reward)
             action_record.append((action_index, reward))

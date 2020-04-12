@@ -1,7 +1,7 @@
 import logging
 import random
-import numpy as np
 
+import numpy as np
 import simpy
 
 # for import plotly, Dash should be installed.
@@ -483,11 +483,12 @@ class FabModel(object):
                 self.env.process(self.move_wafer_A_from_B(arm_list[1], chambers_list[3]))
             elif action_taken == 0:
                 self.curr_nope_count = 0
+                yield self.env.timeout(timeout_no_op)
                 if self.event_entry.triggered:
                     self.event_entry = self.env.event()
                 self.event_entry.succeed(value=self.event_entry)
                 # Raise step event to FabModel.Step()
-                yield self.env.timeout(timeout_no_op)
+
             else:
                 logging.debug('[ERR] undefined action taken: %d', action_taken)
         return
@@ -676,14 +677,15 @@ class FabModel(object):
         if A.store.items.__len__() == 0:
             logging.debug("[ERR] Get Fail. Target is empty.")
             self.fail_flag = True
+            yield self.env.timeout(1)  # Deliver Time
             if not self.event_step.triggered:
                 self.event_step.succeed(value=FabModel.no_step)
             return
         # if not self.event_hdlr.triggered:
         #    logging.debug('at %s, hdlr trigger on move wafer', self.env.now)
         #    self.event_hdlr.succeed(value=self.no_hdlr)
-        wafer = yield A.get()
         yield self.env.timeout(1)  # Deliver Time
+        wafer = yield A.get()
         self.fail_flag = A.fail
         if not self.fail_flag:
             B.put(wafer, self.event_chm)
@@ -704,19 +706,20 @@ class FabModel(object):
             if airlock_entry.get_count() == 1:
                 logging.debug("[ERR] Entry put fail. Airlock is already full.")
                 self.fail_flag = True
+                yield self.env.timeout(1)
                 if not self.event_step.triggered:
                     self.event_step.succeed()
                 break
+            yield self.env.timeout(1)
             airlock_entry.put(wafers[i], self.event_hdlr)
             self.fail_flag = airlock_entry.fail
-            yield self.env.timeout(1)
+
+            if not self.event_step.triggered:
+                self.event_step.succeed()
 
             if not self.event_hdlr.triggered:
                 logging.debug('at %s, hdlr trigger on proc_entry', self.env.now)
                 self.event_hdlr.succeed()
-
-            if not self.event_step.triggered:
-                self.event_step.succeed()
 
     # Generate wafer list randomly and return it.
     def generate_wafers(self, tot_wafers, ch1_t_min, ch1_t_max, ch2_t_min, ch2_t_max):
