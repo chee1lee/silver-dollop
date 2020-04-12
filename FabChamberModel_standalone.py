@@ -701,16 +701,16 @@ class FabModel(object):
     # A process moves wafers to airlock entry, time-out event after a wafer placed on the airlock entry.
     def proc_entry(self, tot_wafers, airlock_entry, wafers):
         for i in range(tot_wafers):
+            yield self.env.timeout(1)
             yield self.event_entry
             self.event_entry = self.env.event()
             if airlock_entry.get_count() == 1:
                 logging.debug("[ERR] Entry put fail. Airlock is already full.")
                 self.fail_flag = True
-                yield self.env.timeout(1)
                 if not self.event_step.triggered:
                     self.event_step.succeed()
                 break
-            yield self.env.timeout(1)
+
             airlock_entry.put(wafers[i], self.event_hdlr)
             self.fail_flag = airlock_entry.fail
 
