@@ -211,9 +211,9 @@ def train(env, TARGET_REWARD):
             score += reward
             reward = score  # Reward will be the accumulative score
 
-            if done and score < TARGET_REWARD:
-                reward = TARGET_REWARD * (-2.5)  # If it fails, punish hard
-                observation = np.zeros_like(observation)
+            # if done and score < TARGET_REWARD:
+            #    reward = TARGET_REWARD * (-2.5)  # If it fails, punish hard
+            #    observation = np.zeros_like(observation)
 
             rwd_queue[exp_pointer] = reward
             next_obs_queue[exp_pointer] = observation

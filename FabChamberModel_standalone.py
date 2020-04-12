@@ -107,7 +107,7 @@ class chamber_profiler(object):
             self.reward = self.reward - 1
 
         if self.prev_exit_wafer != self.exit_wafer:
-            self.reward = 10
+            self.reward = 1000
             self.prev_exit_wafer = self.exit_wafer
             if self.prev_exit_wafer == self.total_wafer:
                 success_flag = True
@@ -337,13 +337,12 @@ class FabModel(object):
     def step(self, action):
         # Do NOT manipulate statements sequence!
         self.action = action
+        self.env.run(self.event_step)
+        self.event_step = self.env.event()
         obs = self.get_observation()
         if self.done:
             logging.debug("Done flag raised.")
             return obs
-        self.env.run(self.event_step)
-        self.event_step = self.env.event()
-
         return obs
 
 
@@ -407,6 +406,7 @@ class FabModel(object):
             if self.event_chm.triggered:
                 logging.debug('at %s chamber event detected', self.env.now)
                 self.event_chm = self.env.event()
+                continue
 
             logging.debug('------------------------- ')
             logging.debug('at %s Action Taken:[%s] %s', self.env.now, self.action, FabModel.action_dict[self.action])
