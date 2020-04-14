@@ -9,8 +9,6 @@ import simpy
 #    pip install numpy
 # FIRST_DATE = date(2020, 1, 1)
 logging.basicConfig(format='%(asctime)s L[%(lineno)d] %(message)s ', level=logging.WARNING)
-
-
 # logging.basicConfig(format='%(asctime)s L[%(lineno)d] %(message)s ', level=logging.DEBUG)
 
 # manages chamber wafer_state and reward information.
@@ -394,6 +392,11 @@ class FabModel(object):
         if self.curr_nope_count > 30:
             self.done = True
 
+        # finished all wafers
+        if self.airlock[0].store.items.__len__() == self.wafer_number:
+            self.reward = 1000
+            self.done = True
+
         return (self.state, self.reward, self.done)
 
     def proc_handler(self, airlock_list, arm_list, chambers_list):
@@ -573,7 +576,7 @@ class FabModel(object):
 
         if (self.chambers[2].store.items.__len__() == 0) \
                 or (self.chambers[2].store.items.__len__() == 1
-                    and (self.chambers[2].env.now - self.chambers[2].wafer_start_time < self.chambers[0].execution_time)):
+                    and (self.chambers[2].env.now - self.chambers[2].wafer_start_time < self.chambers[2].execution_time)):
             # self.env.process(self.move_wafer_A_from_B(chambers_list[2], arm_list[0]))
             valid_action_mask[9] = 0
             # self.env.process(self.move_wafer_A_from_B(chambers_list[2], arm_list[1]))
@@ -689,7 +692,8 @@ class FabModel(object):
                 valid_action_mask[18] = 0
                 # self.env.process(self.move_wafer_A_from_B(arm_list[1], chambers_list[3]))
                 valid_action_mask[20] = 0
-
+        if self.wafer_in_proc >= self.wafer_number:
+            valid_action_mask[0] = 0
         return valid_action_mask
 
 
@@ -764,11 +768,12 @@ return: observation, reward, done(True/False)
 """
 # For debugging.
 if __name__ == "__main__":
-    model = FabModel(20)
+    model = FabModel(10)
     # alist = [0, 0, 0, 0,]
     # alist = [0, 1, 0, 2, 15, 14, 21, 0, 7, 6, 18, 2, 0, 14]
     # alist = [0, 2, 14, 21, 21, 0, 2, 21, 16, 6, 0, 21, 7, 20, 17, 2, 16]
-    alist = [0, 1, 13, 0, 21, 1]
+    # alist = [0, 1, 13, 0, 21, 1]
+    alist = [0, 2, 16, 21, 21, 21, 21, 21, 8, 0, 21, 18, 2, 16, 0, 2, 0, 21, 21, 7, 19, 9, 16, 3, 2, 21, 7, 16, 12, 19, 21, 21, 21, 0, 1, 13, 4, 12, 4, 8, 5, 21, 19, 0, 21, 18, 2, 0, 1, 16, 10, 4, 0, 8, 15, 1, 0, 18, 2, 13, 7, 16, 21, 12, 19, 7, 0, 4, 2, 0]
     for i in alist:
         result = model.step(action=i)
         if result[2]:
