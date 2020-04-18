@@ -9,11 +9,14 @@ import simpy
 #    pip install numpy
 # FIRST_DATE = date(2020, 1, 1)
 logging.basicConfig(format='%(asctime)s L[%(lineno)d] %(message)s ', level=logging.WARNING)
+
+
 # logging.basicConfig(format='%(asctime)s L[%(lineno)d] %(message)s ', level=logging.DEBUG)
 
 # manages chamber wafer_state and reward information.
 class chamber_profiler(object):
     def __init__(self, chambers_name, tot_wafer):
+        self.prev_reward = 0
         self.reward = 0
         self.total_wafer = tot_wafer
         self.state = 0
@@ -63,16 +66,7 @@ class chamber_profiler(object):
             self.state = 987654321
         return self.state
         """
-        '''
-        self.state = ""
-        for item in self.status_values:
-            self.state += str(item['cnt']) + '|' + str(item['time_remaining']) + '|'
 
-        self.state += str(self.robotarm[0]) + '|' + str(self.armtime[0]) + '|'
-        self.state += str(self.robotarm[1]) + '|' + str(self.armtime[1]) + '|'
-        self.state += str(self.entry_wafer)  # + '|'
-        # self.state += str(self.exit_wafer)
-        '''
         self.state = list()
         for item in self.status_values:
             self.state.append(item['cnt'])
@@ -84,40 +78,37 @@ class chamber_profiler(object):
         self.state.append(self.entry_wafer)
         return self.state
 
-    def get_reward(self, fail_flag, success_flag):
-        # To Do: Design reward generation logic in here.
-        # Example.. refer to design docs.
+    def get_reward(self, fail_flag, success_flag, action):
         self.reward = 0
+        cur_reward = 0
+        pre_reward = self.prev_reward
+        success = False
         for item in self.status_values:
             if item['cnt'] == 0:
                 if (item['name'] == 'ch2nd_1') | (item['name'] == 'ch2nd_2'):
-                    self.reward = self.reward - 3
+                    cur_reward = cur_reward - 1
                 else:
-                    self.reward = self.reward - 2
+                    cur_reward = cur_reward - 1
             if item['cnt'] == 1 and item['time_remaining'] == 0:
-                self.reward = self.reward - 3
-
-        '''
-        for i in self.robotarm:
-            if i == 0:
-                self.reward = self.reward - 1
-        '''
-
+                cur_reward = cur_reward - 1
         if self.entry_wafer == 0:
-            self.reward = self.reward - 1
+            self.reward = cur_reward - 1
 
+        if cur_reward == pre_reward:
+            self.reward = 0
+        elif cur_reward > pre_reward:
+            self.reward = 1
+        else:
+            self.reward = -1
+        self.prev_reward = cur_reward
+        if action == 21 and self.reward == 0:
+            self.reward = -3
         if self.prev_exit_wafer != self.exit_wafer:
-            self.reward = 1000
+            self.reward = 10
             self.prev_exit_wafer = self.exit_wafer
             if self.prev_exit_wafer == self.total_wafer:
-                success_flag = True
-
-        # To Do: Design Terminate reward -1000
-        # and Finish wafer_state +1000
-        # if fail_flag:
-            # self.reward = -1000
-        if success_flag:
-            self.reward = +1000
+                success = True
+                self.reward = 10
         return self.reward
 
     def print_info(self, reward, env):
@@ -130,7 +121,6 @@ class chamber_profiler(object):
         logging.debug('Entry   {0:5d}'.format(self.entry_wafer))
         logging.debug('Exit    {0:5d}'.format(self.exit_wafer))
         logging.debug('time: %s-----------------------------\n', env.now)
-        # print('-----------------------------')
 
 
 # Chamber_model class makes a time-out event to handler after it gets the wafer.
@@ -291,7 +281,7 @@ class FabModel(object):
     def initialize(self):
         self.env = simpy.Environment()
         # Allocate wafers to processing on the chamber system.
-        wafers = self.generate_wafers(self.wafer_number, 3, 15, 5, 30)
+        wafers = self.generate_wafers(self.wafer_number, 3, 5, 5, 7)
         # wafers = self.generate_wafers(self.wafer_number, 3, 3, 5, 5)
         # Allocate robot arm and chamber, airlock resources.
         self.robot_arm.clear()
@@ -349,7 +339,6 @@ class FabModel(object):
             return obs
         return obs
 
-
     def init_chamber_profiler(self):
         ch_names = list()
         for ch in self.chambers:
@@ -369,7 +358,7 @@ class FabModel(object):
                                         self.robot_arm[1].get_count(),
                                         self.robot_arm[1].get_time_remaining())
         self.reward = self.profiler.get_reward(self.fail_flag,
-                                               self.success_flag)
+                                               self.success_flag, self.action)
         self.state = self.profiler.get_state()
         self.state.append(self.curr_nope_count)
 
@@ -378,6 +367,7 @@ class FabModel(object):
 
         if self.fail_flag is True:
             self.done = True
+            self.reward = -10
             logging.info("--------Terminate state!!!--------")
             if not self.event_step.triggered:
                 self.event_step.succeed(value=self.event_step)
@@ -389,12 +379,13 @@ class FabModel(object):
         if self.env.now > self.wafer_number * 1000:
             self.done = True
 
-        if self.curr_nope_count > 30:
+        if self.curr_nope_count > 15:
+            self.reward = -10
             self.done = True
 
         # finished all wafers
-        if self.airlock[0].store.items.__len__() == self.wafer_number:
-            self.reward = 1000
+        if self.airlock[1].store.items.__len__() == self.wafer_number:
+            self.reward = 10
             self.done = True
 
         return (self.state, self.reward, self.done)
@@ -517,7 +508,6 @@ class FabModel(object):
 
         return
 
-
     # check current state and return valid action set
     # for example,
     # return {0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}
@@ -560,7 +550,8 @@ class FabModel(object):
 
         if (self.chambers[0].store.items.__len__() == 0) \
                 or (self.chambers[0].store.items.__len__() == 1
-                    and (self.chambers[0].env.now - self.chambers[0].wafer_start_time < self.chambers[0].execution_time)):
+                    and (self.chambers[0].env.now - self.chambers[0].wafer_start_time < self.chambers[
+                    0].execution_time)):
             # self.env.process(self.move_wafer_A_from_B(chambers_list[0], arm_list[0]))
             valid_action_mask[5] = 0
             # self.env.process(self.move_wafer_A_from_B(chambers_list[0], arm_list[1]))
@@ -568,7 +559,8 @@ class FabModel(object):
 
         if (self.chambers[1].store.items.__len__() == 0) \
                 or (self.chambers[1].store.items.__len__() == 1
-                    and (self.chambers[1].env.now - self.chambers[1].wafer_start_time < self.chambers[1].execution_time)):
+                    and (self.chambers[1].env.now - self.chambers[1].wafer_start_time < self.chambers[
+                    1].execution_time)):
             # self.env.process(self.move_wafer_A_from_B(chambers_list[1], arm_list[0]))
             valid_action_mask[7] = 0
             # self.env.process(self.move_wafer_A_from_B(chambers_list[1], arm_list[1]))
@@ -576,7 +568,8 @@ class FabModel(object):
 
         if (self.chambers[2].store.items.__len__() == 0) \
                 or (self.chambers[2].store.items.__len__() == 1
-                    and (self.chambers[2].env.now - self.chambers[2].wafer_start_time < self.chambers[2].execution_time)):
+                    and (self.chambers[2].env.now - self.chambers[2].wafer_start_time < self.chambers[
+                    2].execution_time)):
             # self.env.process(self.move_wafer_A_from_B(chambers_list[2], arm_list[0]))
             valid_action_mask[9] = 0
             # self.env.process(self.move_wafer_A_from_B(chambers_list[2], arm_list[1]))
@@ -584,7 +577,8 @@ class FabModel(object):
 
         if (self.chambers[3].store.items.__len__() == 0) \
                 or (self.chambers[3].store.items.__len__() == 1
-                    and (self.chambers[3].env.now - self.chambers[3].wafer_start_time < self.chambers[3].execution_time)):
+                    and (self.chambers[3].env.now - self.chambers[3].wafer_start_time < self.chambers[
+                    3].execution_time)):
             # self.env.process(self.move_wafer_A_from_B(chambers_list[3], arm_list[0]))
             valid_action_mask[11] = 0
             # self.env.process(self.move_wafer_A_from_B(chambers_list[3], arm_list[1]))
@@ -642,7 +636,7 @@ class FabModel(object):
             # self.env.process(self.move_wafer_A_from_B(arm_list[1], chambers_list[3]))
             valid_action_mask[20] = 0
 
-        #invalid put
+        # invalid put
         if self.robot_arm[0].store.items.__len__() != 0:
             if self.robot_arm[0].store.items[0]['wafer_state'] == 'raw':
                 # self.env.process(self.move_wafer_A_from_B(arm_list[0], airlock_list[1]))
@@ -695,7 +689,6 @@ class FabModel(object):
         if self.wafer_in_proc >= self.wafer_number:
             valid_action_mask[0] = 0
         return valid_action_mask
-
 
     # move wafer function.
     def move_wafer_A_from_B(self, A, B):
@@ -754,6 +747,7 @@ class FabModel(object):
     def generate_wafers(self, tot_wafers, ch1_t_min, ch1_t_max, ch2_t_min, ch2_t_max):
         wafer_list = list()
         for i in range(tot_wafers):
+            # for i in range(1000):
             wafer_list.append({'id': i,
                                'wafer_state': 'raw',
                                'time_ch1': random.randint(ch1_t_min, ch1_t_max),
@@ -773,7 +767,9 @@ if __name__ == "__main__":
     # alist = [0, 1, 0, 2, 15, 14, 21, 0, 7, 6, 18, 2, 0, 14]
     # alist = [0, 2, 14, 21, 21, 0, 2, 21, 16, 6, 0, 21, 7, 20, 17, 2, 16]
     # alist = [0, 1, 13, 0, 21, 1]
-    alist = [0, 2, 16, 21, 21, 21, 21, 21, 8, 0, 21, 18, 2, 16, 0, 2, 0, 21, 21, 7, 19, 9, 16, 3, 2, 21, 7, 16, 12, 19, 21, 21, 21, 0, 1, 13, 4, 12, 4, 8, 5, 21, 19, 0, 21, 18, 2, 0, 1, 16, 10, 4, 0, 8, 15, 1, 0, 18, 2, 13, 7, 16, 21, 12, 19, 7, 0, 4, 2, 0]
+    alist = [0, 2, 16, 21, 21, 21, 21, 21, 8, 0, 21, 18, 2, 16, 0, 2, 0, 21, 21, 7, 19, 9, 16, 3, 2, 21, 7, 16, 12, 19,
+             21, 21, 21, 0, 1, 13, 4, 12, 4, 8, 5, 21, 19, 0, 21, 18, 2, 0, 1, 16, 10, 4, 0, 8, 15, 1, 0, 18, 2, 13, 7,
+             16, 21, 12, 19, 7, 0, 4, 2, 0]
     for i in alist:
         result = model.step(action=i)
         if result[2]:

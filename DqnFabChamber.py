@@ -7,6 +7,7 @@ import random
 import numpy as np
 from argparse import ArgumentParser
 import time
+from scipy import stats
 
 # from evn_chamberModel import EnvChamberModel
 from FabChamberModel_standalone import FabModel
@@ -20,7 +21,7 @@ tf.disable_v2_behavior()
 
 def get_options():
     parser = ArgumentParser()
-    parser.add_argument('--MAX_EPISODE', type=int, default=800000,
+    parser.add_argument('--MAX_EPISODE', type=int, default=200000,
                         help='max number of episodes iteration')
     parser.add_argument('--ACTION_DIM', type=int, default=22,
                         help='number of actions one can take')
@@ -28,25 +29,25 @@ def get_options():
                         help='number of observations one can see')
     parser.add_argument('--GAMMA', type=float, default=0.9,
                         help='discount factor of Q learning')
-    parser.add_argument('--INIT_EPS', type=float, default=0.6,
+    parser.add_argument('--INIT_EPS', type=float, default=0.9,
                         help='initial probability for randomly sampling action')
-    parser.add_argument('--FINAL_EPS', type=float, default=5e-3,
+    parser.add_argument('--FINAL_EPS', type=float, default=1e-3,
                         help='finial probability for randomly sampling action')
     parser.add_argument('--EPS_DECAY', type=float, default=0.9,
                         help='epsilon decay rate')
-    parser.add_argument('--EPS_ANNEAL_STEPS', type=int, default=500,
+    parser.add_argument('--EPS_ANNEAL_STEPS', type=int, default=5000,
                         help='steps interval to decay epsilon')
-    parser.add_argument('--LR', type=float, default=1e-3,
+    parser.add_argument('--LR', type=float, default=7e-3,
                         help='learning rate')
-    parser.add_argument('--MAX_EXPERIENCE', type=int, default=30000,
+    parser.add_argument('--MAX_EXPERIENCE', type=int, default=10000,
                         help='size of experience replay memory')
-    parser.add_argument('--BATCH_SIZE', type=int, default=1024,
+    parser.add_argument('--BATCH_SIZE', type=int, default=5000,
                         help='mini batch size'),
-    parser.add_argument('--H1_SIZE', type=int, default=64,
+    parser.add_argument('--H1_SIZE', type=int, default=256,
                         help='size of hidden layer 1')
-    parser.add_argument('--H2_SIZE', type=int, default=64,
+    parser.add_argument('--H2_SIZE', type=int, default=256,
                         help='size of hidden layer 2')
-    parser.add_argument('--H3_SIZE', type=int, default=64,
+    parser.add_argument('--H3_SIZE', type=int, default=256,
                         help='size of hidden layer 3')
     options = parser.parse_args()
     return options
@@ -97,7 +98,10 @@ class QAgent:
         return observation, Q
 
     # Sample action with random rate eps
-    def sample_action(self, Q, feed, eps, options, valid_action_mask):
+    def sample_action(self, Q, feed, eps, options,
+                      valid_action_mask=None):
+        if valid_action_mask is None:
+            valid_action_mask = np.ones(22, dtype=int)
         act_values = Q.eval(feed_dict=feed)
 
         for i in range(options.ACTION_DIM):
@@ -119,25 +123,29 @@ class QAgent:
                         nonzero_position += 1
         else:
             action_index = np.argmax(act_values)
-            # print('Q-value: ', np.round(act_values, decimals=2))
+
         action = np.zeros(options.ACTION_DIM)
         action[action_index] = 1
-        return action
+        return action, act_values
 
 
 def train(env, TARGET_REWARD):
     # Define placeholders to catch inputs and add options
     global time_begin
     options = get_options()
-    agent = QAgent(options)
+    # collecting network : action value function
+    evaluation_agent = QAgent(options)
+    # evaluation network target action value function
+    collecting_agent = QAgent(options)
+
     sess = tf.compat.v1.InteractiveSession()
 
-    obs, Q1 = agent.add_value_net(options)
+    obs, Q1 = collecting_agent.add_value_net(options)
     act = tf.placeholder(tf.float32, [None, options.ACTION_DIM])
     # act = tf.Variable(tf.ones(shape=[None, options.ACTION_DIM]), dtype=tf.float32)
     rwd = tf.placeholder(tf.float32, [None, ])
     # rwd = tf.Variable(tf.ones(shape=[None, None]), dtype=tf.float32)
-    next_obs, Q2 = agent.add_value_net(options)
+    next_obs, Q2 = collecting_agent.add_value_net(options)
 
     values1 = tf.reduce_sum(tf.multiply(Q1, act), reduction_indices=1)
     values2 = rwd + options.GAMMA * tf.reduce_max(Q2, reduction_indices=1)
@@ -148,19 +156,11 @@ def train(env, TARGET_REWARD):
     sess.run(tf.global_variables_initializer())
 
     # saving and loading networks
-    saver = tf.train.Saver()
-    checkpoint = tf.train.get_checkpoint_state("checkpoints-DQN_FabChamberModel")
-    if checkpoint and checkpoint.model_checkpoint_path:
-        saver.restore(sess, checkpoint.model_checkpoint_path)
-        print("Successfully loaded:", checkpoint.model_checkpoint_path)
-    else:
-        print("Could not find old network weights")
-
+    saver = load_network_savers(sess)
     # Some initial local variables
     feed = {}
     eps = options.INIT_EPS
-    global_step = 0
-    exp_pointer = 0
+    global_step, exp_pointer = 0, 0
     learning_finished = False
 
     # The replay memory
@@ -177,53 +177,51 @@ def train(env, TARGET_REWARD):
         env.reset()
         observation, _, _ = env.get_observation()
         done = False
-        score = 0
-        sum_loss_value = 0
+        score, sum_loss_value = 0, 0
         action_record = list()
         prt_on = False
         prt_done_cnt = 0
         # The step loop
         action_cnt = 0
+
         while not done:
             global_step += 1
             action_cnt += 1
             if global_step % options.EPS_ANNEAL_STEPS == 0 and eps > options.FINAL_EPS:
                 eps = eps * options.EPS_DECAY
-
             obs_queue[exp_pointer] = observation
-            valid_action_mask = env.get_valid_action_mask()
-
-            action = agent.sample_action(Q1, {obs: np.reshape(observation, (1, -1))}, eps, options, valid_action_mask)
-
-            act_queue[exp_pointer] = action
-
+            action, q_val = agent.sample_action(Q1, {obs: np.reshape(observation, (1, -1))}, eps, options,
+                                                env.get_valid_action_mask())
+            # action, q_val = agent.sample_action(Q1, {obs: np.reshape(observation, (1, -1))}, eps, options)
+            if random.random() > 0.997:
+                print('obs:{0}\nQ:{1}'.format(observation, np.round(q_val, decimals=2)))
             action_index = np.argmax(action)
-
             observation, reward, done = env.step(action_index)
+            act_queue[exp_pointer] = action
+            rwd_queue[exp_pointer] = reward
+            next_obs_queue[exp_pointer] = observation
 
-            # print('action: ', action_index, ', reward: ', reward)
             action_record.append((action_index, reward))
-            if reward >= 0:
+            if reward > 10:
+
                 prt_done_cnt += 1
                 if prt_done_cnt == prt_target_cnt:
                     prt_on = True
                     prt_target_cnt += 1
+
             score += reward
             reward = score  # Reward will be the accumulative score
 
             # if done and score < TARGET_REWARD:
             #    reward = TARGET_REWARD * (-2.5)  # If it fails, punish hard
             #    observation = np.zeros_like(observation)
-
-            rwd_queue[exp_pointer] = reward
-            next_obs_queue[exp_pointer] = observation
-
             exp_pointer += 1
             if exp_pointer == options.MAX_EXPERIENCE:
                 exp_pointer = 0  # Refill the replay memory if it is full
-
             if global_step >= options.MAX_EXPERIENCE:
-                rand_indices = np.random.choice(options.MAX_EXPERIENCE, options.BATCH_SIZE)
+                rand_indices = get_rnd_indices_by_action(act_queue, options)  # by uniform actions
+                # rand_indices = np.random.choice(options.MAX_EXPERIENCE, options.BATCH_SIZE) # by random
+                # rand_indices = rwd_queue.argsort()[::-1][:options.BATCH_SIZE] # by higher rewards
                 feed.update({obs: obs_queue[rand_indices]})
                 feed.update({act: act_queue[rand_indices]})
                 feed.update({rwd: rwd_queue[rand_indices]})
@@ -234,8 +232,9 @@ def train(env, TARGET_REWARD):
                     step_loss_value = sess.run(loss, feed_dict=feed)
                 # Use sum to calculate average loss of this episode
                 sum_loss_value += step_loss_value
+                Q1.set_weights(Q2.get_weights())
 
-        if prt_on or ((i_episode + 1) % 1000 == 0):
+        if prt_on or ((i_episode + 1) % 100 == 0):
             print(action_record)
             print('{0:7.1f} == Episode {1} ended with score = {2}, avg_loss = {3:4.2f} =='.format(
                 time.time() - time_begin,
@@ -256,6 +255,41 @@ def train(env, TARGET_REWARD):
         # save progress every 100 episodes
         if learning_finished and i_episode % 100 == 0:
             saver.save(sess, 'checkpoints-DQN_FabChamberModel', global_step=global_step)
+
+
+def get_rnd_indices_by_action(act_queue, options):
+    act_d_vec = [np.where(r == 1) for r in act_queue]
+    act_prob = act_d_vec
+    act_unique, act_count = np.unique(act_d_vec, return_counts=True)
+    num_bins = act_count.shape
+    act_freq = stats.relfreq(act_d_vec, numbins=22)
+    if random.random() > 0.99:
+        print(act_freq)
+    cal_value = np.zeros(22)
+    for i in range(22):
+        if act_freq.frequency[i] == 0:
+            act_count = np.insert(act_count, i, 0)
+            cal_value[i] = 0
+        else:
+            cal_value[i] = act_freq.frequency[i] / act_count[i]
+    for i in range(act_d_vec.__len__()):
+        sel_act = act_d_vec[i]
+        act_prob[i] = cal_value[sel_act[0]]
+    # print('sum:', np.sum(act_prob))
+    prob_list = np.asarray(act_prob).flatten()
+    rand_indices = np.random.choice(options.MAX_EXPERIENCE, options.BATCH_SIZE, p=prob_list)
+    return rand_indices
+
+
+def load_network_savers(sess):
+    saver = tf.train.Saver()
+    checkpoint = tf.train.get_checkpoint_state("checkpoints-DQN_FabChamberModel")
+    if checkpoint and checkpoint.model_checkpoint_path:
+        saver.restore(sess, checkpoint.model_checkpoint_path)
+        print("Successfully loaded:", checkpoint.model_checkpoint_path)
+    else:
+        print("Could not find old network weights")
+    return saver
 
 
 if __name__ == "__main__":
