@@ -28,25 +28,26 @@ def get_options():
                         help='number of observations one can see')
     parser.add_argument('--GAMMA', type=float, default=0.9,
                         help='discount factor of Q learning')
-    parser.add_argument('--INIT_EPS', type=float, default=0.6,
+    parser.add_argument('--INIT_EPS', type=float, default=1.0,
                         help='initial probability for randomly sampling action')
     parser.add_argument('--FINAL_EPS', type=float, default=5e-3,
                         help='finial probability for randomly sampling action')
-    parser.add_argument('--EPS_DECAY', type=float, default=0.9,
+    parser.add_argument('--EPS_DECAY'
+                        '', type=float, default=0.95,
                         help='epsilon decay rate')
-    parser.add_argument('--EPS_ANNEAL_STEPS', type=int, default=500,
+    parser.add_argument('--EPS_ANNEAL_STEPS', type=int, default=5000,
                         help='steps interval to decay epsilon')
     parser.add_argument('--LR', type=float, default=1e-3,
                         help='learning rate')
-    parser.add_argument('--MAX_EXPERIENCE', type=int, default=30000,
+    parser.add_argument('--MAX_EXPERIENCE', type=int, default=2000,
                         help='size of experience replay memory')
-    parser.add_argument('--BATCH_SIZE', type=int, default=1024,
+    parser.add_argument('--BATCH_SIZE', type=int, default=256,
                         help='mini batch size'),
-    parser.add_argument('--H1_SIZE', type=int, default=64,
+    parser.add_argument('--H1_SIZE', type=int, default=512,
                         help='size of hidden layer 1')
-    parser.add_argument('--H2_SIZE', type=int, default=64,
+    parser.add_argument('--H2_SIZE', type=int, default=512,
                         help='size of hidden layer 2')
-    parser.add_argument('--H3_SIZE', type=int, default=64,
+    parser.add_argument('--H3_SIZE', type=int, default=512,
                         help='size of hidden layer 3')
     options = parser.parse_args()
     return options
@@ -172,6 +173,7 @@ def train(env, TARGET_REWARD):
     # Score cache
     score_queue = []
     prt_target_cnt = 1
+    maximum_reward = 0
     # The episode loop
     for i_episode in range(options.MAX_EPISODE):
         env.reset()
@@ -224,6 +226,7 @@ def train(env, TARGET_REWARD):
 
             if global_step >= options.MAX_EXPERIENCE:
                 rand_indices = np.random.choice(options.MAX_EXPERIENCE, options.BATCH_SIZE)
+                # rand_indices = rwd_queue.argsort()[::-1][:options.BATCH_SIZE]
                 feed.update({obs: obs_queue[rand_indices]})
                 feed.update({act: act_queue[rand_indices]})
                 feed.update({rwd: rwd_queue[rand_indices]})
@@ -235,12 +238,16 @@ def train(env, TARGET_REWARD):
                 # Use sum to calculate average loss of this episode
                 sum_loss_value += step_loss_value
 
-        if prt_on or ((i_episode + 1) % 1000 == 0):
+        if maximum_reward < score:
+            maximum_reward = score
+            prt_on = True
+
+        if prt_on or ((i_episode + 1) % 100 == 0):
             print(action_record)
-            print('{0:7.1f} == Episode {1} ended with score = {2}, avg_loss = {3:4.2f} =='.format(
+            print('{0:7.1f} == Episode {1} ended with score = {2}, avg_loss = {3:4.2f}, eps = {4:1.3f}, #produced_wafer = {5} =='.format(
                 time.time() - time_begin,
                 i_episode + 1, score,
-                sum_loss_value / action_cnt))
+                sum_loss_value / action_cnt, eps, env.airlock[1].store.items.__len__()))
             prt_on = False
         action_record.clear()
 
@@ -252,7 +259,7 @@ def train(env, TARGET_REWARD):
             else:
                 learning_finished = False
         if learning_finished:
-            print("learning Finishged. Let starts Testing !!!")
+            print("learning Finished. Let starts Testing !!!")
         # save progress every 100 episodes
         if learning_finished and i_episode % 100 == 0:
             saver.save(sess, 'checkpoints-DQN_FabChamberModel', global_step=global_step)
@@ -260,6 +267,6 @@ def train(env, TARGET_REWARD):
 
 if __name__ == "__main__":
     model = FabModel(wafer_number=10)
-    target_reward = 9000
+    target_reward = 920
     time_begin = time.time()
     train(model, target_reward)

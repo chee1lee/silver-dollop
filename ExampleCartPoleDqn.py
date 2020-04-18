@@ -165,7 +165,7 @@ def train(env):
             global_step += 1
             if global_step % options.EPS_ANNEAL_STEPS == 0 and eps > options.FINAL_EPS:
                 eps = eps * options.EPS_DECAY
-            env.render()
+            # env.render()
 
             obs_queue[exp_pointer] = observation
             action = agent.sample_action(Q1, {obs: np.reshape(observation, (1, -1))}, eps, options)
@@ -199,8 +199,8 @@ def train(env):
                 # Use sum to calculate average loss of this episode
                 sum_loss_value += step_loss_value
 
-        print("====== Episode {} ended with score = {}, avg_loss = {} ======".format(i_episode + 1, score,
-                                                                               sum_loss_value / score))
+        print("====== Episode {} ended with score = {}, avg_loss = {}, eps = {} ======".format(i_episode + 1, score,
+                                                                               sum_loss_value / score, eps))
         score_queue.append(score)
         if len(score_queue) > MAX_SCORE_QUEUE_SIZE:
             score_queue.pop(0)

@@ -88,6 +88,7 @@ class chamber_profiler(object):
         # To Do: Design reward generation logic in here.
         # Example.. refer to design docs.
         self.reward = 0
+        """
         for item in self.status_values:
             if item['cnt'] == 0:
                 if (item['name'] == 'ch2nd_1') | (item['name'] == 'ch2nd_2'):
@@ -96,7 +97,7 @@ class chamber_profiler(object):
                     self.reward = self.reward - 2
             if item['cnt'] == 1 and item['time_remaining'] == 0:
                 self.reward = self.reward - 3
-
+        """
         '''
         for i in self.robotarm:
             if i == 0:
@@ -107,7 +108,7 @@ class chamber_profiler(object):
             self.reward = self.reward - 1
 
         if self.prev_exit_wafer != self.exit_wafer:
-            self.reward = 1000
+            self.reward = 1
             self.prev_exit_wafer = self.exit_wafer
             if self.prev_exit_wafer == self.total_wafer:
                 success_flag = True
@@ -117,7 +118,9 @@ class chamber_profiler(object):
         # if fail_flag:
             # self.reward = -1000
         if success_flag:
-            self.reward = +1000
+            self.reward = 10
+        else:
+            self.reward = 1
         return self.reward
 
     def print_info(self, reward, env):
@@ -291,8 +294,8 @@ class FabModel(object):
     def initialize(self):
         self.env = simpy.Environment()
         # Allocate wafers to processing on the chamber system.
-        wafers = self.generate_wafers(self.wafer_number, 3, 15, 5, 30)
-        # wafers = self.generate_wafers(self.wafer_number, 3, 3, 5, 5)
+        # wafers = self.generate_wafers(self.wafer_number, 3, 15, 5, 30)
+        wafers = self.generate_wafers(self.wafer_number, 3, 3, 5, 5)
         # Allocate robot arm and chamber, airlock resources.
         self.robot_arm.clear()
         self.robot_arm.append(arm_model(self.env, 2, '1st_arm'))
@@ -370,6 +373,9 @@ class FabModel(object):
                                         self.robot_arm[1].get_time_remaining())
         self.reward = self.profiler.get_reward(self.fail_flag,
                                                self.success_flag)
+        if self.curr_nope_count > 0:
+            self.reward = -1
+
         self.state = self.profiler.get_state()
         self.state.append(self.curr_nope_count)
 
@@ -390,11 +396,12 @@ class FabModel(object):
             self.done = True
 
         if self.curr_nope_count > 30:
+            self.reward = -1000
             self.done = True
 
         # finished all wafers
-        if self.airlock[0].store.items.__len__() == self.wafer_number:
-            self.reward = 1000
+        if self.airlock[1].store.items.__len__() == self.wafer_number:
+            # self.reward = 1000
             self.done = True
 
         return (self.state, self.reward, self.done)
