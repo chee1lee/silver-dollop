@@ -15,8 +15,6 @@ from FabChamberModel_standalone import FabModel
 MAX_SCORE_QUEUE_SIZE = 100  # number of episode scores to calculate average performance
 
 tf.disable_v2_behavior()
-
-
 # tf.compat.v1.enable_v2_behavior()
 
 def get_options():
@@ -31,25 +29,23 @@ def get_options():
                         help='discount factor of Q learning')
     parser.add_argument('--INIT_EPS', type=float, default=1.0,
                         help='initial probability for randomly sampling action')
-    parser.add_argument('--FINAL_EPS', type=float, default=1e-3,
     parser.add_argument('--FINAL_EPS', type=float, default=5e-3,
                         help='finial probability for randomly sampling action')
-    parser.add_argument('--EPS_DECAY'
-                        '', type=float, default=0.95,
+    parser.add_argument('--EPS_DECAY', type=float, default=0.95,
                         help='epsilon decay rate')
     parser.add_argument('--EPS_ANNEAL_STEPS', type=int, default=5000,
                         help='steps interval to decay epsilon')
     parser.add_argument('--LR', type=float, default=7e-3,
                         help='learning rate')
-    parser.add_argument('--MAX_EXPERIENCE', type=int, default=2000,
+    parser.add_argument('--MAX_EXPERIENCE', type=int, default=10000,
                         help='size of experience replay memory')
-    parser.add_argument('--BATCH_SIZE', type=int, default=256,
+    parser.add_argument('--BATCH_SIZE', type=int, default=5000,
                         help='mini batch size'),
-    parser.add_argument('--H1_SIZE', type=int, default=512,
+    parser.add_argument('--H1_SIZE', type=int, default=128,
                         help='size of hidden layer 1')
-    parser.add_argument('--H2_SIZE', type=int, default=512,
+    parser.add_argument('--H2_SIZE', type=int, default=128,
                         help='size of hidden layer 2')
-    parser.add_argument('--H3_SIZE', type=int, default=512,
+    parser.add_argument('--H3_SIZE', type=int, default=128,
                         help='size of hidden layer 3')
     options = parser.parse_args()
     return options
@@ -59,6 +55,29 @@ def get_options():
 The DQN model itself.
 Remain unchanged when applied to different problems.
 '''
+'''
+class QAgent_keras(tf.keras.Model):
+    def __init__(self, options, num_observations, num_actions):
+        super(QAgent_keras,self).__init__()
+        self.input_layer = tf.keras.layers.InputLayer(input_shape=(num_observations, ))
+        self.dense1 = tf.keras.layersDense(options.H1_SIZE, activation= tf.nn.relu, kernel_initializer='RandomNormal')
+        self.dense2 = tf.keras.layersDense(options.H2_SIZE, activation=tf.nn.relu, kernel_initializer='RandomNormal')
+        self.dense3 = tf.keras.layersDense(options.H2_SIZE, activation=tf.nn.relu, kernel_initializer='RandomNormal')
+        self.output_layer = tf.keras.layers.Dense(num_actions, activation=tf.nn.relu, kernel_initializer='RandomNormal')
+
+    def call(self, inputs):
+'''
+
+
+def copy_agent_AtoB(A, B):
+    B.W1 = tf.identity(A.W1)
+    B.W2 = tf.identity(A.W2)
+    B.W3 = tf.identity(A.W3)
+    B.W4 = tf.identity(A.W4)
+    B.b1 = tf.identity(A.b1)
+    B.b2 = tf.identity(A.b2)
+    B.b3 = tf.identity(A.b3)
+    B.b4 = tf.identity(A.b4)
 
 
 class QAgent:
@@ -147,7 +166,7 @@ def train(env, TARGET_REWARD):
     # act = tf.Variable(tf.ones(shape=[None, options.ACTION_DIM]), dtype=tf.float32)
     rwd = tf.placeholder(tf.float32, [None, ])
     # rwd = tf.Variable(tf.ones(shape=[None, None]), dtype=tf.float32)
-    next_obs, Q2 = collecting_agent.add_value_net(options)
+    next_obs, Q2 = evaluation_agent.add_value_net(options)
 
     values1 = tf.reduce_sum(tf.multiply(Q1, act), reduction_indices=1)
     values2 = rwd + options.GAMMA * tf.reduce_max(Q2, reduction_indices=1)
@@ -162,7 +181,7 @@ def train(env, TARGET_REWARD):
     # Some initial local variables
     feed = {}
     eps = options.INIT_EPS
-    global_step, exp_pointer = 0, 0
+    global_step, exp_pointer, agent_update_period = 0, 0, 0
     learning_finished = False
 
     # The replay memory
@@ -193,11 +212,11 @@ def train(env, TARGET_REWARD):
             if global_step % options.EPS_ANNEAL_STEPS == 0 and eps > options.FINAL_EPS:
                 eps = eps * options.EPS_DECAY
             obs_queue[exp_pointer] = observation
-            action, q_val = agent.sample_action(Q1, {obs: np.reshape(observation, (1, -1))}, eps, options,
-                                                env.get_valid_action_mask())
+            action, q_val = collecting_agent.sample_action(Q1, {obs: np.reshape(observation, (1, -1))}, eps, options,
+                                                           env.get_valid_action_mask())
             # action, q_val = agent.sample_action(Q1, {obs: np.reshape(observation, (1, -1))}, eps, options)
-            if random.random() > 0.997:
-                print('obs:{0}\nQ:{1}'.format(observation, np.round(q_val, decimals=2)))
+            #if random.random() > 0.997:
+                #print('obs:{0}\nQ:{1}'.format(observation, np.round(q_val, decimals=2)))
             action_index = np.argmax(action)
             observation, reward, done = env.step(action_index)
             act_queue[exp_pointer] = action
@@ -222,6 +241,7 @@ def train(env, TARGET_REWARD):
             if exp_pointer == options.MAX_EXPERIENCE:
                 exp_pointer = 0  # Refill the replay memory if it is full
             if global_step >= options.MAX_EXPERIENCE:
+
                 rand_indices = get_rnd_indices_by_action(act_queue, options)  # by uniform actions
                 # rand_indices = rwd_queue.argsort()[::-1][:options.BATCH_SIZE]
                 # rand_indices = np.random.choice(options.MAX_EXPERIENCE, options.BATCH_SIZE) # by random
@@ -236,6 +256,18 @@ def train(env, TARGET_REWARD):
                     step_loss_value = sess.run(loss, feed_dict=feed)
                 # Use sum to calculate average loss of this episode
                 sum_loss_value += step_loss_value
+                agent_update_period += 1
+                if agent_update_period == 1000:
+                    print('Update evaluation gents...')
+                    copy_agent_AtoB(collecting_agent, evaluation_agent)
+                    # evaluation_agent.set_weights(collecting_agent.get_weights())
+                    '''
+                    variables1 = evaluation_agent.model.trainable_variables
+                    variables2 = collecting_agent.model.trainable_variables
+                    for v1, v2 in zip(variables1, variables2):
+                        v1.assign(v2.numpy())
+                    '''
+                    agent_update_period = 0
 
         if maximum_reward < score:
             maximum_reward = score
@@ -243,10 +275,11 @@ def train(env, TARGET_REWARD):
 
         if prt_on or ((i_episode + 1) % 100 == 0):
             print(action_record)
-            print('{0:7.1f} == Episode {1} ended with score = {2}, avg_loss = {3:4.2f}, eps = {4:1.3f}, #produced_wafer = {5} =='.format(
-                time.time() - time_begin,
-                i_episode + 1, score,
-                sum_loss_value / action_cnt, eps, env.airlock[1].store.items.__len__()))
+            print(
+                '{0:7.1f} == Episode {1} ended with score = {2}, avg_loss = {3:4.2f}, eps = {4:1.3f}, #produced_wafer = {5} =='.format(
+                    time.time() - time_begin,
+                    i_episode + 1, score,
+                    sum_loss_value / action_cnt, eps, env.airlock[1].store.items.__len__()))
             prt_on = False
         action_record.clear()
 
@@ -270,8 +303,8 @@ def get_rnd_indices_by_action(act_queue, options):
     act_unique, act_count = np.unique(act_d_vec, return_counts=True)
     num_bins = act_count.shape
     act_freq = stats.relfreq(act_d_vec, numbins=22)
-    if random.random() > 0.99:
-        print(act_freq)
+    #if random.random() > 0.99:
+        #print(act_freq)
     cal_value = np.zeros(22)
     for i in range(22):
         if act_freq.frequency[i] == 0:
