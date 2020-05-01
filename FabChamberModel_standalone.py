@@ -118,9 +118,9 @@ class chamber_profiler(object):
         # if fail_flag:
             # self.reward = -1000
         if success_flag:
-            self.reward = 10
-        else:
             self.reward = 1
+        else:
+            self.reward = 0
         return self.reward
 
     def print_info(self, reward, env):
@@ -404,7 +404,7 @@ class FabModel(object):
             # self.reward = 1000
             self.done = True
 
-        return (self.state, self.reward, self.done)
+        return (np.array(self.state), self.reward, self.done)
 
     def proc_handler(self, airlock_list, arm_list, chambers_list):
         # This while loop should run all of the posterior events were completed.

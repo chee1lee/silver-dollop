@@ -41,7 +41,7 @@ run_summary_writer = tf.summary.create_file_writer(run_logdir)
 # HyperParameters #
 ###################
 batch_size = 1000
-H1, H2, H3 = 96, 64, 48
+H1, H2, H3, H4 = 256, 256, 256, 256
 observation_shape = [14]
 n_actions = 22
 replay_buffer_size = 1000
@@ -58,6 +58,7 @@ model = keras.models.Sequential([
     keras.layers.Dense(H1, activation='relu', input_shape=observation_shape),
     keras.layers.Dense(H2, activation='relu'),
     keras.layers.Dense(H3, activation='relu'),
+    keras.layers.Dense(H4, activation='relu'),
     keras.layers.Dense(n_actions)
 ])
 target = keras.models.clone_model(model)
@@ -78,9 +79,8 @@ def epsilon_greedy_policy(obs, epsilon=0, valid_action_mask=None):
         Q_values = model.predict(obs.reshape(1,-1))
         for i in range(n_actions):
             if valid_action_mask[i] == 0:
-                valid_action_mask[i] = np.NINF
-        Q_values_masked = Q_values[0] * valid_action_mask
-        action_chosen = np.argmax(Q_values_masked)
+                Q_values[0][i] = np.NINF
+        action_chosen = np.argmax(Q_values[0])
     return action_chosen
 
 
@@ -159,6 +159,7 @@ for episode in range(episode_length):
         if done:
             with run_summary_writer.as_default():
                 tf.summary.scalar('Reward', reward_sum, step=episode)
+                tf.summary.scalar('#produced wafers', env.airlock[1].store.items.__len__(), step=episode)
             reward_sum = 0
             break
         if replay_buffer.__len__() == replay_buffer_size:
