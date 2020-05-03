@@ -25,44 +25,12 @@ from collections import deque
 from scipy import stats
 import random
 
-root_logdir = os.path.join(os.curdir, "DQN_logs")
 
-
-def get_run_logdir():
+def get_run_logdir(prefix):
     import time
-    run_id = time.strftime("N128x3_F_eps_waferT_swing_3_%Y_%m_%d-%H_%M")
+    run_id = time.strftime(prefix + "_%Y_%m_%d-%H_%M")
     return os.path.join(root_logdir, run_id)
 
-
-run_logdir = get_run_logdir()  # e.g., './my_logs/run_2019_06_07-15_15_22'
-run_summary_writer = tf.summary.create_file_writer(run_logdir)
-
-###################
-# HyperParameters #
-###################
-batch_size = 1000
-H1, H2, H3 = 128, 128, 128
-observation_shape = [14]
-n_actions = 22
-replay_buffer_size = 1000
-discount_factor = 0.99
-learning_rate = 1e-3
-episode_length = 80000
-
-
-env = FabModel(wafer_number=10)
-
-
-model = keras.models.Sequential([
-    #keras.layers.InputLayer(input_shape= observation_shape),
-    keras.layers.Dense(H1, activation='relu', input_shape=observation_shape),
-    keras.layers.Dense(H2, activation='relu'),
-    keras.layers.Dense(H3, activation='relu'),
-    #keras.layers.Dense(H4, activation='relu'),
-    keras.layers.Dense(n_actions)
-])
-target = keras.models.clone_model(model)
-target.set_weights(model.get_weights())
 
 def epsilon_greedy_policy(obs, epsilon=0, valid_action_mask=None):
     action_chosen = 0
@@ -82,10 +50,6 @@ def epsilon_greedy_policy(obs, epsilon=0, valid_action_mask=None):
                 Q_values[0][i] = np.NINF
         action_chosen = np.argmax(Q_values[0])
     return action_chosen
-
-
-# The replay memory (observation, action, reward, next_states, done
-replay_buffer = deque(maxlen=replay_buffer_size)
 
 
 def get_rnd_indices_by_action(act_queue):
@@ -127,10 +91,6 @@ def play_one_step(state, epsilon):
     return next_state, reward, done
 
 
-optimizer = keras.optimizers.Adam(lr=learning_rate)
-loss_fn = keras.losses.mean_squared_error
-
-
 def training_step(episode):
     experiences = sample_experiences()
     states, actions, rewards, next_states, dones = experiences
@@ -148,29 +108,86 @@ def training_step(episode):
     with run_summary_writer.as_default():
         tf.summary.scalar("Loss", loss, step=episode)
 
-for episode in range(episode_length):
-    env.reset()
-    obs, _, _ = env.get_observation()
-    reward_sum = 0
-    for step in range(replay_buffer_size):
-        epsilon = max(1 - episode / 35000, 0.001)
-        obs, reward, done = play_one_step(obs, epsilon)
-        reward_sum += reward
-        if done:
-            with run_summary_writer.as_default():
-                tf.summary.scalar('Reward', reward_sum, step=episode)
-                tf.summary.scalar('#produced wafers', env.airlock[1].store.items.__len__(), step=episode)
-                tf.summary.scalar('makespan',env.env.now, step=episode)
-                tf.summary.scalar('eps', epsilon, step=episode)
-            reward_sum = 0
-            break
-        if replay_buffer.__len__() == replay_buffer_size:
-            training_step(episode)
-            replay_buffer.clear()
-            break
-    #Update Target Model
-    if episode % 100 == 0:
-        target.set_weights(model.get_weights())
-    print('\rprogress {0}/{1} episodes'.format(episode, episode_length), end=' ')
+
+def set_hyper_parameters():
+    global batch_size, H1, H2, H3, observation_shape, n_actions, replay_buffer_size, discount_factor, learning_rate, episode_length
+    ###################
+    # HyperParameters #
+    ###################
+    batch_size = 1000
+    H1, H2, H3 = 128, 128, 128
+    observation_shape = [14]
+    n_actions = 22
+    replay_buffer_size = 1000
+    discount_factor = 0.99
+    learning_rate = 1e-3
+    episode_length = 4000
 
 
+def create_model(load_filename=""):
+    if load_filename == "":
+        model = keras.models.Sequential([
+            # keras.layers.InputLayer(input_shape= observation_shape),
+            keras.layers.Dense(H1, activation='relu', input_shape=observation_shape),
+            keras.layers.Dense(H2, activation='relu'),
+            keras.layers.Dense(H3, activation='relu'),
+            # keras.layers.Dense(H4, activation='relu'),
+            keras.layers.Dense(n_actions)
+        ])
+        model.compile(loss='mean_squared_error', optimizer='adam')
+    else:
+        model = keras.models.load_model(load_filename)
+        print('loading the model completed: ', load_filename)
+
+    # The replay memory (observation, action, reward, next_states, done
+    replay_buffer = deque(maxlen=replay_buffer_size)
+    optimizer = keras.optimizers.Adam(lr=learning_rate)
+    loss_fn = keras.losses.mean_squared_error
+
+    target = keras.models.clone_model(model)
+    target.set_weights(model.get_weights())
+
+    return model, target, replay_buffer, optimizer, loss_fn
+
+
+if __name__ == "__main__":
+    set_hyper_parameters()
+
+    root_logdir = os.path.join(os.curdir, "DQN_logs")
+
+    run_logdir = get_run_logdir("N128x3_F_eps_waferT_swing_3")  # e.g., './my_logs/run_2019_06_07-15_15_22'
+    run_summary_writer = tf.summary.create_file_writer(run_logdir)
+
+
+    env = FabModel(wafer_number=10)
+
+    save_model_filename = "128_3_0.001_35000_1000_40k.h5"
+    model, target, replay_buffer, optimizer, loss_fn = create_model()
+    # model, target, replay_buffer, optimizer, loss_fn = create_model(save_model_filename)
+
+    for episode in range(episode_length):
+        env.reset()
+        obs, _, _ = env.get_observation()
+        reward_sum = 0
+        for step in range(replay_buffer_size):
+            epsilon = max(1 - episode / 35000, 0.001)
+            obs, reward, done = play_one_step(obs, epsilon)
+            reward_sum += reward
+            if done:
+                with run_summary_writer.as_default():
+                    tf.summary.scalar('Reward', reward_sum, step=episode)
+                    tf.summary.scalar('#produced wafers', env.airlock[1].store.items.__len__(), step=episode)
+                    tf.summary.scalar('makespan', env.env.now, step=episode)
+                    tf.summary.scalar('eps', epsilon, step=episode)
+                reward_sum = 0
+                break
+            if replay_buffer.__len__() == replay_buffer_size:
+                training_step(episode)
+                replay_buffer.clear()
+                break
+        # Update Target Model
+        if episode % 100 == 0:
+            target.set_weights(model.get_weights())
+        print('\rprogress {0}/{1} episodes'.format(episode, episode_length), end=' ')
+
+    model.save(save_model_filename)
