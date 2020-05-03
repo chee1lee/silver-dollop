@@ -115,8 +115,6 @@ class chamber_profiler(object):
 
         # To Do: Design Terminate reward -1000
         # and Finish wafer_state +1000
-        # if fail_flag:
-            # self.reward = -1000
         if success_flag:
             self.reward = 1
         else:
@@ -124,7 +122,7 @@ class chamber_profiler(object):
         return self.reward
 
     def print_info(self, reward, env):
-        logging.info('State: {0}, Reward: {1}'.format(self.get_state(), reward))
+        logging.debug('State: {0}, Reward: {1}'.format(self.get_state(), reward))
         logging.debug("Chamber Wafer Time_remaining")
         for item in self.status_values:
             logging.debug('{0} {1:5d} {2:14d}'.format(item['name'], item['cnt'], item['time_remaining']))
@@ -295,7 +293,7 @@ class FabModel(object):
         self.env = simpy.Environment()
         # Allocate wafers to processing on the chamber system.
         # wafers = self.generate_wafers(self.wafer_number, 3, 15, 5, 30)
-        wafers = self.generate_wafers(self.wafer_number, 3, 3, 5, 5)
+        wafers = self.generate_wafers(self.wafer_number, 3, 6, 5, 8)
         # Allocate robot arm and chamber, airlock resources.
         self.robot_arm.clear()
         self.robot_arm.append(arm_model(self.env, 2, '1st_arm'))
@@ -384,7 +382,7 @@ class FabModel(object):
 
         if self.fail_flag is True:
             self.done = True
-            logging.info("--------Terminate state!!!--------")
+            logging.debug("--------Terminate state!!!--------")
             if not self.event_step.triggered:
                 self.event_step.succeed(value=self.event_step)
             # after this statement, step() method should check done flag and terminate.
@@ -395,7 +393,7 @@ class FabModel(object):
         if self.env.now > self.wafer_number * 1000:
             self.done = True
 
-        if self.curr_nope_count > 30:
+        if self.curr_nope_count > 10:
             self.reward = -1000
             self.done = True
 

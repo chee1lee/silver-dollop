@@ -30,7 +30,7 @@ root_logdir = os.path.join(os.curdir, "DQN_logs")
 
 def get_run_logdir():
     import time
-    run_id = time.strftime("run_%Y_%m_%d-%H_%M_%S")
+    run_id = time.strftime("N128x3_F_eps_waferT_swing_3_%Y_%m_%d-%H_%M")
     return os.path.join(root_logdir, run_id)
 
 
@@ -41,13 +41,13 @@ run_summary_writer = tf.summary.create_file_writer(run_logdir)
 # HyperParameters #
 ###################
 batch_size = 1000
-H1, H2, H3, H4 = 256, 256, 256, 256
+H1, H2, H3 = 128, 128, 128
 observation_shape = [14]
 n_actions = 22
 replay_buffer_size = 1000
 discount_factor = 0.99
 learning_rate = 1e-3
-episode_length = 100000
+episode_length = 80000
 
 
 env = FabModel(wafer_number=10)
@@ -58,7 +58,7 @@ model = keras.models.Sequential([
     keras.layers.Dense(H1, activation='relu', input_shape=observation_shape),
     keras.layers.Dense(H2, activation='relu'),
     keras.layers.Dense(H3, activation='relu'),
-    keras.layers.Dense(H4, activation='relu'),
+    #keras.layers.Dense(H4, activation='relu'),
     keras.layers.Dense(n_actions)
 ])
 target = keras.models.clone_model(model)
@@ -153,13 +153,15 @@ for episode in range(episode_length):
     obs, _, _ = env.get_observation()
     reward_sum = 0
     for step in range(replay_buffer_size):
-        epsilon = max(1 - episode / 70000, 0.01)
+        epsilon = max(1 - episode / 35000, 0.001)
         obs, reward, done = play_one_step(obs, epsilon)
         reward_sum += reward
         if done:
             with run_summary_writer.as_default():
                 tf.summary.scalar('Reward', reward_sum, step=episode)
                 tf.summary.scalar('#produced wafers', env.airlock[1].store.items.__len__(), step=episode)
+                tf.summary.scalar('makespan',env.env.now, step=episode)
+                tf.summary.scalar('eps', epsilon, step=episode)
             reward_sum = 0
             break
         if replay_buffer.__len__() == replay_buffer_size:
