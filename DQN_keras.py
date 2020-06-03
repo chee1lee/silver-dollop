@@ -7,6 +7,7 @@ import logging
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
+'''
 from tf_agents.agents.dqn import dqn_agent
 from tf_agents.environments import tf_py_environment
 from tf_agents.environments import utils
@@ -20,6 +21,7 @@ from tf_agents.utils import common
 from env_ChamberModel_standalone import EnvChamberModel
 from tf_agents.drivers.dynamic_step_driver import DynamicStepDriver
 from tf_agents.policies.random_tf_policy import RandomTFPolicy
+'''
 from FabChamberModel_standalone import FabModel
 from collections import deque
 from scipy import stats
@@ -77,8 +79,11 @@ def get_rnd_indices_by_action(act_queue):
 
 
 def sample_experiences():
-    rand_indices = get_rnd_indices_by_action(np.array([item[1] for item in replay_buffer]))
-    batch = [replay_buffer[index] for index in rand_indices]
+    # rand_indices = get_rnd_indices_by_action(np.array([item[1] for item in replay_buffer]))
+    # batch = [replay_buffer[index] for index in rand_indices]
+    # use all candidates
+    batch = replay_buffer
+
     states, actions, rewards, next_states, dones = [
         np.array([experience[field_index] for experience in batch]) for field_index in range(5)]
     return states, actions, rewards, next_states, dones
@@ -121,7 +126,7 @@ def set_hyper_parameters():
     replay_buffer_size = 1000
     discount_factor = 0.99
     learning_rate = 1e-3
-    episode_length = 4000
+    episode_length = 80000
 
 
 def create_model(load_filename=""):
@@ -155,29 +160,31 @@ if __name__ == "__main__":
 
     root_logdir = os.path.join(os.curdir, "DQN_logs")
 
-    run_logdir = get_run_logdir("N128x3_F_eps_waferT_swing_3")  # e.g., './my_logs/run_2019_06_07-15_15_22'
+    experiment_name = "N128x3_F_eps_waferT_swing_3"
+    run_logdir = get_run_logdir(experiment_name)  # e.g., './my_logs/run_2019_06_07-15_15_22'
     run_summary_writer = tf.summary.create_file_writer(run_logdir)
 
 
     env = FabModel(wafer_number=10)
 
-    save_model_filename = "128_3_0.001_35000_1000_40k.h5"
     model, target, replay_buffer, optimizer, loss_fn = create_model()
-    # model, target, replay_buffer, optimizer, loss_fn = create_model(save_model_filename)
+    # model, target, replay_buffer, optimizer, loss_fn = create_model(experiment_name + ".h5")
 
     for episode in range(episode_length):
         env.reset()
         obs, _, _ = env.get_observation()
         reward_sum = 0
         for step in range(replay_buffer_size):
-            epsilon = max(1 - episode / 35000, 0.001)
+            epsilon = max(1.0 - episode / 35000, 0.001)
+            # epsilon = 0.001
             obs, reward, done = play_one_step(obs, epsilon)
             reward_sum += reward
             if done:
                 with run_summary_writer.as_default():
                     tf.summary.scalar('Reward', reward_sum, step=episode)
                     tf.summary.scalar('#produced wafers', env.airlock[1].store.items.__len__(), step=episode)
-                    tf.summary.scalar('makespan', env.env.now, step=episode)
+                    if env.airlock[1].store.items.__len__() == env.wafer_number:
+                        tf.summary.scalar('makespan', env.env.now, step=episode)
                     tf.summary.scalar('eps', epsilon, step=episode)
                 reward_sum = 0
                 break
@@ -189,5 +196,7 @@ if __name__ == "__main__":
         if episode % 100 == 0:
             target.set_weights(model.get_weights())
         print('\rprogress {0}/{1} episodes'.format(episode, episode_length), end=' ')
+        if episode % 10000 == 0:
+            model.save(experiment_name + '_' + str(episode) + '.h5')
 
-    model.save(save_model_filename)
+    # model.save(save_model_filename + ".h5")
