@@ -80,9 +80,10 @@ def get_rnd_indices_by_action(act_queue):
 
 def sample_experiences():
     # rand_indices = get_rnd_indices_by_action(np.array([item[1] for item in replay_buffer]))
-    # batch = [replay_buffer[index] for index in rand_indices]
-    # use all candidates
-    batch = replay_buffer
+    rand_indices = np.random.choice(replay_buffer_size, batch_size) # by random
+    # rand_indices = rwd_queue.argsort()[::-1][:options.BATCH_SIZE] # by higher rewards
+
+    batch = [replay_buffer[index] for index in rand_indices]
 
     states, actions, rewards, next_states, dones = [
         np.array([experience[field_index] for experience in batch]) for field_index in range(5)]
@@ -114,21 +115,6 @@ def training_step(episode):
         tf.summary.scalar("Loss", loss, step=episode)
 
 
-def set_hyper_parameters():
-    global batch_size, H1, H2, H3, observation_shape, n_actions, replay_buffer_size, discount_factor, learning_rate, episode_length
-    ###################
-    # HyperParameters #
-    ###################
-    batch_size = 1000
-    H1, H2, H3 = 128, 128, 128
-    observation_shape = [14]
-    n_actions = 22
-    replay_buffer_size = 1000
-    discount_factor = 0.99
-    learning_rate = 1e-3
-    episode_length = 80000
-
-
 def create_model(load_filename=""):
     if load_filename == "":
         model = keras.models.Sequential([
@@ -155,48 +141,77 @@ def create_model(load_filename=""):
     return model, target, replay_buffer, optimizer, loss_fn
 
 
+def set_hyper_parameters():
+    global batch_size, H1, H2, H3, observation_shape, n_actions, \
+        replay_buffer_size, discount_factor, learning_rate, episode_length, \
+        target_network_update_frequency, init_eps, final_eps, eps_decay_period
+    ###################
+    # HyperParameters #
+    ###################
+    observation_shape = [14]
+    n_actions = 22
+    discount_factor = 0.99
+
+    H1, H2, H3 = 128, 128, 128
+    batch_size = 1000
+    replay_buffer_size = 1000
+    learning_rate = 0.0005
+    episode_length = 40000
+    target_network_update_frequency = 100
+    init_eps = 1.0
+    final_eps = 0.001
+    eps_decay_period = 35000
+
+
 if __name__ == "__main__":
     set_hyper_parameters()
 
     root_logdir = os.path.join(os.curdir, "DQN_logs")
+    num_wafers = 10
 
-    experiment_name = "N128x3_F_eps_waferT_swing_3"
+    experiment_name = "N{0}x3_{1}_{2}_{3}_{4}_{5}_{6}_{7}_{8}_{9}".format(
+                        H1, batch_size, replay_buffer_size, learning_rate,
+                        episode_length, target_network_update_frequency,
+                        init_eps, final_eps, eps_decay_period,
+                        num_wafers)
     run_logdir = get_run_logdir(experiment_name)  # e.g., './my_logs/run_2019_06_07-15_15_22'
     run_summary_writer = tf.summary.create_file_writer(run_logdir)
 
-
-    env = FabModel(wafer_number=10)
+    env = FabModel(wafer_number=num_wafers)
 
     model, target, replay_buffer, optimizer, loss_fn = create_model()
-    # model, target, replay_buffer, optimizer, loss_fn = create_model(experiment_name + ".h5")
+    # model, target, replay_buffer, optimizer, loss_fn = create_model("128_3_0.001_35000_1000_40k.h5")
 
     for episode in range(episode_length):
         env.reset()
         obs, _, _ = env.get_observation()
         reward_sum = 0
-        for step in range(replay_buffer_size):
-            epsilon = max(1.0 - episode / 35000, 0.001)
-            # epsilon = 0.001
+        epsilon = max(init_eps - episode / eps_decay_period, final_eps)
+        # epsilon = 0.001
+
+        done = False
+        while not done:
             obs, reward, done = play_one_step(obs, epsilon)
             reward_sum += reward
-            if done:
-                with run_summary_writer.as_default():
-                    tf.summary.scalar('Reward', reward_sum, step=episode)
-                    tf.summary.scalar('#produced wafers', env.airlock[1].store.items.__len__(), step=episode)
-                    if env.airlock[1].store.items.__len__() == env.wafer_number:
-                        tf.summary.scalar('makespan', env.env.now, step=episode)
-                    tf.summary.scalar('eps', epsilon, step=episode)
-                reward_sum = 0
-                break
-            if replay_buffer.__len__() == replay_buffer_size:
+
+            if replay_buffer.__len__() >= replay_buffer_size:
                 training_step(episode)
+                # replay_buffer.popleft()  # for redundant learning
                 replay_buffer.clear()
-                break
-        # Update Target Model
-        if episode % 100 == 0:
-            target.set_weights(model.get_weights())
+
+        with run_summary_writer.as_default():
+            tf.summary.scalar('Reward', reward_sum, step=episode)
+            tf.summary.scalar('#produced wafers', env.airlock[1].store.items.__len__(), step=episode)
+            if env.airlock[1].store.items.__len__() == env.wafer_number:
+                tf.summary.scalar('makespan', env.env.now, step=episode)
+            tf.summary.scalar('eps', epsilon, step=episode)
+
         print('\rprogress {0}/{1} episodes'.format(episode, episode_length), end=' ')
-        if episode % 10000 == 0:
+
+        if episode % target_network_update_frequency == 0:
+            target.set_weights(model.get_weights())
+
+        if episode % 1000 == 0:
             model.save(experiment_name + '_' + str(episode) + '.h5')
 
-    # model.save(save_model_filename + ".h5")
+    model.save(experiment_name + ".h5")
